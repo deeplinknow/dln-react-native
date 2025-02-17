@@ -1,6 +1,15 @@
 import { Platform, NativeModules } from 'react-native';
 import type { MatchRequestBody, MatchResponse, Fingerprint } from './types';
 
+// Export all types that consumers might need
+export type {
+  MatchRequestBody,
+  MatchResponse,
+  Fingerprint,
+  DeeplinkMatch,
+  FingerprintMatch,
+} from './types';
+
 export interface DeepLinkNowConfig {
   enableLogs?: boolean;
 }
@@ -103,12 +112,7 @@ class DeepLinkNow {
     const fingerprint = await this.getFingerprint();
 
     const matchRequest: MatchRequestBody = {
-      app_id: this.apiKey!, // Using API key as app_id
-      fingerprint: {
-        ...fingerprint,
-        // Remove ip_address as it will be determined server-side
-        ip_address: '',
-      },
+      fingerprint,
     };
 
     this.log('Sending match request:', matchRequest);

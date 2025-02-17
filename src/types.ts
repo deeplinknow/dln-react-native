@@ -15,7 +15,6 @@ export type Fingerprint = {
 };
 
 export type FingerprintMatch = {
-  ip_address: string;
   platform: 'ios' | 'android';
   os_version: string;
   device_model: string;
@@ -30,7 +29,6 @@ export type FingerprintMatch = {
 };
 
 export type MatchRequestBody = {
-  app_id: string; // UUID
   fingerprint: Omit<FingerprintMatch, 'created_at'>;
 };
 
