@@ -1,27 +1,21 @@
+import { jsxs as _jsxs, jsx as _jsx } from "react/jsx-runtime";
 import { useEffect, useState } from "react";
 import { Text, View, StyleSheet } from "react-native";
 import DeepLinkNow from "react-native-deeplink-now";
-import type { DeferredUserResponse } from "react-native-deeplink-now";
-
 DeepLinkNow.initialize("12345");
-
 export default function App() {
-  const [user, setUser] = useState<DeferredUserResponse | null>(null);
-
+  const [user, setUser] = useState(null);
   useEffect(() => {
     DeepLinkNow.findDeferredUser().then((response) => {
       console.log(response);
       setUser(response);
     });
   }, []);
-
-  return (
-    <View style={styles.container}>
-      <Text>Result: {JSON.stringify(user)}</Text>
-    </View>
-  );
+  return _jsx(View, {
+    style: styles.container,
+    children: _jsxs(Text, { children: ["Result: ", JSON.stringify(user)] }),
+  });
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,

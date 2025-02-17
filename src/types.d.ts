@@ -6,42 +6,36 @@ export type Fingerprint = {
   device_model: string;
   language: string;
   timezone: string;
-  installed_at: string; // ISO 8601 datetime
-  last_opened_at: string; // ISO 8601 datetime
+  installed_at: string;
+  last_opened_at: string;
   device_id: string | null;
   advertising_id: string | null;
   vendor_id: string | null;
   hardware_fingerprint: string | null;
 };
-
 export type FingerprintMatch = {
   platform: "ios" | "android";
   os_version: string;
   device_model: string;
   language: string;
   timezone: string;
-  created_at: string; // ISO 8601 datetime
-  // These are used in the OR clause for finding matches
+  created_at: string;
   device_id: string | null;
   advertising_id: string | null;
   vendor_id: string | null;
   hardware_fingerprint: string | null;
 };
-
 export type MatchRequestBody = {
   fingerprint: Omit<FingerprintMatch, "created_at">;
 };
-
-// Response types for completeness
 export type DeeplinkMatch = {
-  id: string; // UUID
+  id: string;
   target_url: string;
   metadata: Record<string, any>;
-  campaign_id?: string; // UUID
-  matched_at: string; // ISO 8601 datetime
-  expires_at: string; // ISO 8601 datetime
+  campaign_id?: string;
+  matched_at: string;
+  expires_at: string;
 };
-
 export type MatchResponse = {
   match: {
     deeplink?: DeeplinkMatch;

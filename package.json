@@ -7,6 +7,15 @@
   "module": "./lib/module/index.js",
   "types": "./lib/typescript/commonjs/index.d.ts",
   "typings": "./lib/typescript/commonjs/index.d.ts",
+  "scripts": {
+    "example": "yarn workspace react-native-deeplink-now-example",
+    "test": "jest",
+    "typecheck": "tsc",
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "clean": "del-cli lib",
+    "prepare": "bob build && eslint \"**/*.{js,ts,tsx}\" --fix",
+    "release": "release-it"
+  },
   "exports": {
     ".": {
       "import": "./lib/module/index.js",
@@ -32,15 +41,6 @@
     "!**/__mocks__",
     "!**/.*"
   ],
-  "scripts": {
-    "example": "yarn workspace react-native-deeplink-now-example",
-    "test": "jest",
-    "typecheck": "tsc",
-    "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "clean": "del-cli lib",
-    "prepare": "bob build",
-    "release": "release-it"
-  },
   "keywords": [
     "react-native",
     "ios",
@@ -126,30 +126,13 @@
       "prettier"
     ],
     "rules": {
-      "react/react-in-jsx-scope": "off",
-      "prettier/prettier": [
-        "error",
-        {
-          "quoteProps": "consistent",
-          "singleQuote": true,
-          "tabWidth": 2,
-          "trailingComma": "es5",
-          "useTabs": false
-        }
-      ]
+      "react/react-in-jsx-scope": "off"
     }
   },
   "eslintIgnore": [
     "node_modules/",
     "lib/"
   ],
-  "prettier": {
-    "quoteProps": "consistent",
-    "singleQuote": true,
-    "tabWidth": 2,
-    "trailingComma": "es5",
-    "useTabs": false
-  },
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
