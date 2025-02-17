@@ -1,6 +1,6 @@
 {
   "name": "react-native-deeplink-now",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "React Native + Expo SDK for the Deeplink Now deferred deep linking platform",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
