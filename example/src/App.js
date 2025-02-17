@@ -4,19 +4,22 @@ import { Text, View, StyleSheet } from "react-native";
 import DeepLinkNow from "react-native-deeplink-now";
 DeepLinkNow.initialize("12345");
 export default function App() {
-    const [user, setUser] = useState(null);
-    useEffect(() => {
-        DeepLinkNow.findDeferredUser().then((response) => {
-            console.log(response);
-            setUser(response);
-        });
-    }, []);
-    return (_jsx(View, { style: styles.container, children: _jsxs(Text, { children: ["Result: ", JSON.stringify(user)] }) }));
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    DeepLinkNow.findDeferredUser().then((response) => {
+      console.log(response);
+      setUser(response);
+    });
+  }, []);
+  return _jsx(View, {
+    style: styles.container,
+    children: _jsxs(Text, { children: ["Result: ", JSON.stringify(user)] }),
+  });
 }
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
-    },
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });
