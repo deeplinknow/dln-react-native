@@ -1,5 +1,10 @@
 import { Platform, NativeModules } from "react-native";
-import type { MatchRequestBody, MatchResponse, Fingerprint } from "./types";
+import type {
+  MatchRequestBody,
+  MatchResponse,
+  Fingerprint,
+  InitResponse,
+} from "./types";
 
 // Export all types that consumers might need
 export type {
@@ -8,10 +13,13 @@ export type {
   Fingerprint,
   DeeplinkMatch,
   FingerprintMatch,
+  InitResponse,
 } from "./types";
 
 export interface DeepLinkNowConfig {
   enableLogs?: boolean;
+  apiKey?: string;
+  customDomain?: string;
 }
 
 export type DeferredUserResponse = MatchResponse;
@@ -22,6 +30,11 @@ class DeepLinkNow {
     enableLogs: false,
   };
   private installTime: string = new Date().toISOString();
+
+  private validDomains: Set<string> = new Set([
+    "deeplinknow.com",
+    "deeplink.now",
+  ]);
 
   private log(...args: any[]) {
     if (this.config.enableLogs) {
@@ -91,7 +104,7 @@ class DeepLinkNow {
     }
   }
 
-  initialize(apiKey: string, config?: DeepLinkNowConfig) {
+  async initialize(apiKey: string, config?: DeepLinkNowConfig) {
     if (!apiKey || typeof apiKey !== "string") {
       this.warn("Invalid API key provided");
       return;
@@ -103,7 +116,51 @@ class DeepLinkNow {
       ...config,
     };
 
+    // Hit the /v1/sdk/init endpoint
+    const response = await this.makeRequest<InitResponse>("init", {
+      method: "POST",
+      body: JSON.stringify({ api_key: apiKey }),
+    });
+
+    if (response) {
+      // Cache valid domains
+      response.app.custom_domains
+        .filter((domain) => domain.domain && domain.verified)
+        .forEach((domain) => {
+          if (domain.domain) this.validDomains.add(domain.domain);
+        });
+
+      this.log("Init response:", response);
+    }
+
     this.log("Initialized with config:", this.config);
+  }
+
+  isValidDomain(domain: string): boolean {
+    return this.validDomains.has(domain);
+  }
+
+  parseDeepLink(
+    url: string,
+  ): { path: string; parameters: Record<string, string> } | null {
+    try {
+      const urlObj = new URL(url);
+      if (!this.isValidDomain(urlObj.hostname)) {
+        return null;
+      }
+
+      const parameters: Record<string, string> = {};
+      urlObj.searchParams.forEach((value, key) => {
+        parameters[key] = value;
+      });
+
+      return {
+        path: urlObj.pathname,
+        parameters,
+      };
+    } catch {
+      return null;
+    }
   }
 
   async findDeferredUser(): Promise<MatchResponse | null> {

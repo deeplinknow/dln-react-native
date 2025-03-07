@@ -49,3 +49,28 @@ export type MatchResponse = {
     ttl_seconds: number;
   };
 };
+
+export interface InitResponse {
+  app: {
+    id: string;
+    name: string;
+    timezone: string;
+    android_package_name: string | null;
+    android_sha256_cert: string | null;
+    ios_bundle_id: string | null;
+    ios_app_store_id: string | null;
+    ios_app_prefix: string | null;
+    custom_domains: Array<{
+      domain: string | null;
+      verified: boolean | null;
+    }>;
+  };
+  account: {
+    status: "active" | "suspended" | "expired";
+    credits_remaining: number;
+    rate_limits: {
+      matches_per_second: number;
+      matches_per_day: number;
+    };
+  };
+}

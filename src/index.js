@@ -5,6 +5,7 @@ class DeepLinkNow {
     enableLogs: false,
   };
   installTime = new Date().toISOString();
+  validDomains = new Set(["deeplinknow.com", "deeplink.now"]);
   log(...args) {
     if (this.config.enableLogs) {
       console.log("[DeepLinkNow]", ...args);
@@ -61,7 +62,7 @@ class DeepLinkNow {
       return null;
     }
   }
-  initialize(apiKey, config) {
+  async initialize(apiKey, config) {
     if (!apiKey || typeof apiKey !== "string") {
       this.warn("Invalid API key provided");
       return;
@@ -71,7 +72,42 @@ class DeepLinkNow {
       ...this.config,
       ...config,
     };
+    // Hit the /v1/sdk/init endpoint
+    const response = await this.makeRequest("init", {
+      method: "POST",
+      body: JSON.stringify({ api_key: apiKey }),
+    });
+    if (response) {
+      // Cache valid domains
+      response.app.custom_domains
+        .filter((domain) => domain.domain && domain.verified)
+        .forEach((domain) => {
+          if (domain.domain) this.validDomains.add(domain.domain);
+        });
+      this.log("Init response:", response);
+    }
     this.log("Initialized with config:", this.config);
+  }
+  isValidDomain(domain) {
+    return this.validDomains.has(domain);
+  }
+  parseDeepLink(url) {
+    try {
+      const urlObj = new URL(url);
+      if (!this.isValidDomain(urlObj.hostname)) {
+        return null;
+      }
+      const parameters = {};
+      urlObj.searchParams.forEach((value, key) => {
+        parameters[key] = value;
+      });
+      return {
+        path: urlObj.pathname,
+        parameters,
+      };
+    } catch {
+      return null;
+    }
   }
   async findDeferredUser() {
     this.log("Finding deferred user...");
