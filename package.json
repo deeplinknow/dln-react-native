@@ -12,9 +12,11 @@
     "test": "jest",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "lint:fix": "eslint \"**/*.{js,ts,tsx}\" --fix",
     "clean": "del-cli lib",
     "prepare": "bob build && eslint \"**/*.{js,ts,tsx}\" --fix",
-    "release": "release-it"
+    "release": "release-it",
+    "release-all": "yarn lint:fix && git add . && yarn prepare && git add . && git commit -m 'chore: prepare release' && yarn release"
   },
   "exports": {
     ".": {

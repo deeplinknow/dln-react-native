@@ -3,7 +3,7 @@ pre-commit:
   commands:
     lint:
       glob: "*.{js,ts,jsx,tsx}"
-      run: npx eslint {staged_files} --fix
+      run: npx eslint {staged_files} --fix && git add {staged_files}
     types:
       glob: "*.{js,ts, jsx, tsx}"
       run: npx tsc
