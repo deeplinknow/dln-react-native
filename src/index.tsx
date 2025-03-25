@@ -6,6 +6,9 @@ import type {
   InitResponse,
 } from "./types";
 
+// We need to get these from NativeModules since they're platform-specific
+const { Locale, TimeZone } = NativeModules;
+
 // Export all types that consumers might need
 export type {
   MatchRequestBody,
@@ -52,16 +55,34 @@ class DeepLinkNow {
       android: NativeModules.DeviceInfo?.model || "unknown",
     });
 
+    // Get Android ID if on Android platform
+    let deviceId = null;
+    if (Platform.OS === "android" && NativeModules.DeviceInfo?.getAndroidId) {
+      try {
+        deviceId = await NativeModules.DeviceInfo.getAndroidId();
+      } catch (e) {
+        this.warn("Failed to get Android ID:", e);
+      }
+    }
+
     return {
-      user_agent: `DeepLinkNow-ReactNative/${Platform.OS}`,
+      user_agent:
+        Platform.OS === "android"
+          ? `DLN-Android/${Platform.Version}`
+          : `DeepLinkNow-ReactNative/${Platform.OS}`,
       platform: Platform.OS === "ios" ? "ios" : "android",
       os_version: String(Platform.Version),
       device_model: deviceModel,
-      language: Intl.DateTimeFormat().resolvedOptions().locale || "en",
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      language:
+        Locale.getDefault?.() ||
+        Intl.DateTimeFormat().resolvedOptions().locale ||
+        "en",
+      timezone:
+        TimeZone.getDefault?.() ||
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
       installed_at: this.installTime,
       last_opened_at: new Date().toISOString(),
-      device_id: null,
+      device_id: deviceId,
       advertising_id: null,
       vendor_id: null,
       hardware_fingerprint: null,

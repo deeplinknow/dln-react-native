@@ -1,6 +1,6 @@
 {
-  "name": "react-native-deeplink-now",
-  "version": "1.0.3",
+  "name": "@deeplinknow/react-native",
+  "version": "1.0.4",
   "description": "React Native + Expo SDK for the Deeplink Now deferred deep linking platform",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
@@ -8,7 +8,7 @@
   "types": "./lib/typescript/commonjs/index.d.ts",
   "typings": "./lib/typescript/commonjs/index.d.ts",
   "scripts": {
-    "example": "yarn workspace react-native-deeplink-now-example",
+    "example": "yarn workspace @deeplinknow/react-native-example",
     "test": "jest",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
@@ -48,14 +48,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jvgeee/react-native-deeplink-now.git"
+    "url": "git+https://github.com/deeplinknow/dln-react-native.git"
   },
-  "author": "DeepLinkow <2121331+jvgeee@users.noreply.github.com> (https://deeplinknow.com)",
+  "author": "DeepLinkNow <2121331+jvgeee@users.noreply.github.com> (https://deeplinknow.com)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/jvgeee/react-native-deeplink-now/issues"
+    "url": "https://github.com/deeplinknow/dln-react-native/issues"
   },
-  "homepage": "https://github.com/jvgeee/react-native-deeplink-now#readme",
+  "homepage": "https://github.com/deeplinknow/dln-react-native#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
