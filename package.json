@@ -16,7 +16,7 @@
     "clean": "del-cli lib",
     "prepare": "bob build && eslint \"**/*.{js,ts,tsx}\" --fix",
     "release": "release-it",
-    "release-all": "yarn lint:fix && git add . && yarn prepare && git add . && git commit -m 'chore: prepare release' && yarn release"
+    "release-all": "git stash && yarn install && git stash pop && yarn lint:fix && git add -A && yarn prepare && git add -A && git commit -m 'chore: prepare release' && git push && yarn release"
   },
   "exports": {
     ".": {
@@ -80,7 +80,7 @@
     "react-native": "0.76.7",
     "react-native-builder-bob": "^0.37.0",
     "release-it": "^18.1.2",
-    "typescript": "^5.2.2"
+    "typescript": "~5.1.6"
   },
   "resolutions": {
     "@types/react": "^18.2.44"
