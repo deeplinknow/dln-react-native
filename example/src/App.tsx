@@ -3,7 +3,7 @@ import { Text, View, StyleSheet } from "react-native";
 import DeepLinkNow from "react-native-deeplink-now";
 import type { DeferredUserResponse } from "react-native-deeplink-now";
 
-DeepLinkNow.initialize("12345");
+DeepLinkNow.initialize("test-api-key");
 
 export default function App() {
   const [user, setUser] = useState<DeferredUserResponse | null>(null);
