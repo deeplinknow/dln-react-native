@@ -16,7 +16,8 @@
     "clean": "del-cli lib",
     "prepare": "bob build && eslint \"**/*.{js,ts,tsx}\" --fix",
     "release": "release-it",
-    "release-all": "git stash && yarn install && git stash pop && yarn lint:fix && git add -A && yarn prepare && git add -A && git commit -m 'chore: prepare release' && git push && yarn release"
+    "release-all": "git stash && yarn install && git stash pop && yarn lint:fix && git add -A && yarn prepare && git add -A && git commit -m 'chore: prepare release' && git push && yarn release",
+    "quick-release": "yarn lint:fix && yarn prepare && HUSKY=0 git add -A && HUSKY=0 git commit -m 'chore: prepare release' --no-verify && git push && yarn release"
   },
   "exports": {
     ".": {
