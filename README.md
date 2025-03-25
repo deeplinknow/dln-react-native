@@ -5,6 +5,10 @@ React Native SDK for DeepLink Now - handle deferred deep linking in your React N
 ## Installation
 
 ```sh
+bun add @deeplinknow/react-native
+// or
+yarn add @deeplinknow/react-native
+// or
 npm install @deeplinknow/react-native
 ```
 
