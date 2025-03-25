@@ -1,17 +1,17 @@
-# react-native-deeplink-now
+# @deeplinknow/react-native
 
 React Native SDK for DeepLink Now - handle deferred deep linking in your React Native app.
 
 ## Installation
 
 ```sh
-npm install react-native-deeplink-now
+npm install @deeplinknow/react-native
 ```
 
 ## Usage
 
 ```typescript
-import DeepLinkNow from "react-native-deeplink-now";
+import DeepLinkNow from "@deeplinknow/react-native";
 
 // Initialize the SDK
 await DeepLinkNow.initialize("your-api-key", {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Text, View, StyleSheet } from "react-native";
-import DeepLinkNow from "react-native-deeplink-now";
-import type { DeferredUserResponse } from "react-native-deeplink-now";
+import DeepLinkNow from "@deeplinknow/react-native";
+import type { DeferredUserResponse } from "@deeplinknow/react-native";
 
 DeepLinkNow.initialize("test-api-key");
 
