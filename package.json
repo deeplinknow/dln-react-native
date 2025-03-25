@@ -8,7 +8,7 @@
   "types": "./lib/typescript/commonjs/index.d.ts",
   "typings": "./lib/typescript/commonjs/index.d.ts",
   "scripts": {
-    "example": "yarn workspace @deeplinknow/react-native-example",
+    "example": "yarn workspace react-native-deeplink-now-example",
     "test": "jest",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
@@ -101,6 +101,9 @@
     ],
     "setupFilesAfterEnv": [
       "<rootDir>/setupJest.js"
+    ],
+    "testPathIgnorePatterns": [
+      "\\.d\\.ts$"
     ]
   },
   "commitlint": {
