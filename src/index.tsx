@@ -1,10 +1,5 @@
 import { Platform, NativeModules } from "react-native";
-import type {
-  MatchRequestBody,
-  MatchResponse,
-  Fingerprint,
-  InitResponse,
-} from "./types";
+import type { MatchResponse, Fingerprint, InitResponse } from "./types";
 
 // We need to get these from NativeModules since they're platform-specific
 const { Locale, TimeZone } = NativeModules;
@@ -50,11 +45,14 @@ class DeepLinkNow {
   }
 
   private async getFingerprint(): Promise<Fingerprint> {
-    // Get device model using Platform constants
-    const deviceModel = Platform.select({
-      ios: NativeModules.DeviceInfo?.deviceName || "unknown",
-      android: NativeModules.DeviceInfo?.model || "unknown",
-    });
+    // Get device model using simple platform detection
+    const platform = Platform.OS;
+    const deviceModel =
+      platform === "ios"
+        ? "iPhone" // In React Native, we can assume iPhone as default iOS device
+        : platform === "android"
+          ? "Android"
+          : "unknown";
 
     // Get OS version directly from Platform.Version
     const osVersion = String(Platform.Version);
@@ -120,9 +118,9 @@ class DeepLinkNow {
     }
 
     // Get screen dimensions and pixel ratio
-    let screenWidth = undefined;
-    let screenHeight = undefined;
-    let pixelRatio = undefined;
+    let screenWidth;
+    let screenHeight;
+    let pixelRatio;
 
     try {
       const { Dimensions } = require("react-native");

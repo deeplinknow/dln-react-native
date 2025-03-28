@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Text,
   View,
@@ -6,7 +6,6 @@ import {
   Pressable,
   Linking,
   ScrollView,
-  ViewStyle,
 } from "react-native";
 import DeepLinkNow from "@deeplinknow/react-native";
 import type { DeferredUserResponse } from "@deeplinknow/react-native";
@@ -27,7 +26,7 @@ export default function App() {
 
   async function findDeferredUser() {
     const response = await DeepLinkNow.findDeferredUser();
-    console.log(response);
+    console.log(JSON.stringify(response, null, 2));
 
     if (response?.matches) {
       setMatches(response?.matches);
@@ -39,10 +38,6 @@ export default function App() {
       "https://test-app.deeplinknow.com/sample-link?is_test=true&hello=world&otherParams=false",
     );
   }
-
-  useEffect(() => {
-    initDln();
-  }, []);
 
   return (
     <ScrollView
@@ -110,7 +105,7 @@ function Match({ match }: { match: Match }) {
                 IP Match: {match.match_details.ip_match.matched ? "✓" : "✗"}
               </Text>
               <Text>
-                Score: {match.match_details.ip_match.score.toFixed(1)}%
+                Weight: {match.match_details.ip_match.score.toFixed(0)}
               </Text>
             </View>
             <View style={styles.detailRow}>
@@ -119,7 +114,7 @@ function Match({ match }: { match: Match }) {
                 {match.match_details.device_match.matched ? "✓" : "✗"}
               </Text>
               <Text>
-                Score: {match.match_details.device_match.score.toFixed(1)}%
+                Weight: {match.match_details.device_match.score.toFixed(0)}
               </Text>
             </View>
             <View style={styles.detailRow}>
@@ -128,7 +123,7 @@ function Match({ match }: { match: Match }) {
                 {match.match_details.locale_match.matched ? "✓" : "✗"}
               </Text>
               <Text>
-                Score: {match.match_details.locale_match.score.toFixed(1)}%
+                Weight: {match.match_details.locale_match.score.toFixed(0)}
               </Text>
             </View>
           </>
