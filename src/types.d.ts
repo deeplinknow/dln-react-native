@@ -12,6 +12,27 @@ export type Fingerprint = {
   advertising_id: string | null;
   vendor_id: string | null;
   hardware_fingerprint: string | null;
+  // Screen dimensions
+  screen_width: number | null;
+  screen_height: number | null;
+  // Additional fingerprinting properties
+  pixel_ratio: number | null;
+  color_depth: number | null;
+  browser_name: string | null;
+  browser_version: string | null;
+  is_tablet: boolean | null;
+  connection_type: string | null;
+  // Additional mobile-specific properties
+  cookies_enabled: boolean | null;
+  local_storage_available: boolean | null;
+  session_storage_available: boolean | null;
+  touch_support: boolean | null;
+  cpu_cores: number | null;
+  device_memory: number | null;
+  // Add timestamp for tracking when fingerprint was generated
+  created_at: string;
+  // Add a property to identify this as a mobile fingerprint
+  source: "mobile";
 };
 export type FingerprintMatch = {
   platform: "ios" | "android";

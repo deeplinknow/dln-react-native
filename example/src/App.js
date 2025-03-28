@@ -2,7 +2,7 @@ import { jsxs as _jsxs, jsx as _jsx } from "react/jsx-runtime";
 import { useEffect, useState } from "react";
 import { Text, View, StyleSheet } from "react-native";
 import DeepLinkNow from "@deeplinknow/react-native";
-DeepLinkNow.initialize("test-api-key");
+DeepLinkNow.initialize("test_api_key");
 export default function App() {
   const [user, setUser] = useState(null);
   useEffect(() => {

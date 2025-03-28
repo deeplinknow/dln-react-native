@@ -22,7 +22,7 @@ jest.mock("react-native", () => ({
 }));
 
 describe("DeepLinkNow Tests", () => {
-  const testApiKey = "test_api_key";
+  const testApiKey = "test-api-key";
   const originalConsoleWarn = console.warn;
 
   beforeEach(() => {
@@ -104,20 +104,47 @@ describe("DeepLinkNow Tests", () => {
       };
 
       const mockMatchResponse = {
-        match: {
-          deeplink: null,
-          confidence_score: 0.0,
-          ttl_seconds: 0,
-          fingerprint: {
-            user_agent: "DLN-iOS/16.0",
-            platform: "ios",
-            language: "en-US",
-            timezone: "America/Los_Angeles",
-            device_id: null,
+        matches: [
+          {
+            confidence_score: 0.95,
+            match_details: {
+              ip_match: { matched: true, score: 1 },
+              device_match: {
+                matched: true,
+                score: 1,
+                components: {
+                  platform: true,
+                  os_version: true,
+                  device_model: true,
+                  hardware_fingerprint: true,
+                },
+              },
+              time_proximity: {
+                score: 1,
+                time_difference_minutes: 0,
+              },
+              locale_match: {
+                matched: true,
+                score: 1,
+                components: {
+                  language: true,
+                  timezone: true,
+                },
+              },
+            },
+            deeplink: {
+              id: "test_id",
+              target_url: "https://example.com",
+              metadata: {
+                campaign: "test_campaign",
+              },
+              campaign_id: "campaign_123",
+              matched_at: "2024-01-01T00:00:00+00:00",
+              expires_at: "2024-01-02T00:00:00+00:00",
+            },
           },
-        },
-        deep_link: null,
-        attribution: null,
+        ],
+        ttl_seconds: 86400,
       };
 
       fetchMock
@@ -128,9 +155,34 @@ describe("DeepLinkNow Tests", () => {
       const result = await DeepLinkNow.findDeferredUser();
 
       expect(result).toBeDefined();
-      expect(result?.match.confidence_score).toBe(0.0);
-      expect(result?.match.ttl_seconds).toBe(0);
-      expect(result?.match.deeplink).toBeNull();
+      expect(result?.matches?.[0]?.confidence_score).toBe(0.95);
+      expect(
+        result?.matches?.[0]?.match_details?.ip_match?.matched,
+      ).toBeTruthy();
+      expect(
+        result?.matches?.[0]?.match_details?.device_match?.matched,
+      ).toBeTruthy();
+      expect(result?.matches?.[0]?.match_details?.time_proximity?.score).toBe(
+        1,
+      );
+      expect(
+        result?.matches?.[0]?.match_details?.locale_match?.matched,
+      ).toBeTruthy();
+      expect(result?.matches?.[0]?.deeplink?.id).toBe("test_id");
+      expect(result?.matches?.[0]?.deeplink?.target_url).toBe(
+        "https://example.com",
+      );
+      expect(result?.matches?.[0]?.deeplink?.metadata?.campaign).toBe(
+        "test_campaign",
+      );
+      expect(result?.matches?.[0]?.deeplink?.campaign_id).toBe("campaign_123");
+      expect(result?.matches?.[0]?.deeplink?.matched_at).toBe(
+        "2024-01-01T00:00:00+00:00",
+      );
+      expect(result?.matches?.[0]?.deeplink?.expires_at).toBe(
+        "2024-01-02T00:00:00+00:00",
+      );
+      expect(result?.ttl_seconds).toBe(86400);
     });
   });
 
@@ -197,22 +249,47 @@ describe("DeepLinkNow Tests", () => {
       };
 
       const mockMatchResponse = {
-        match: {
-          deeplink: {
-            id: "test_id",
-            target_url: "https://example.com",
-            metadata: {
-              campaign: "test_campaign",
+        matches: [
+          {
+            confidence_score: 0.95,
+            match_details: {
+              ip_match: { matched: true, score: 1 },
+              device_match: {
+                matched: true,
+                score: 1,
+                components: {
+                  platform: true,
+                  os_version: true,
+                  device_model: true,
+                  hardware_fingerprint: true,
+                },
+              },
+              time_proximity: {
+                score: 1,
+                time_difference_minutes: 0,
+              },
+              locale_match: {
+                matched: true,
+                score: 1,
+                components: {
+                  language: true,
+                  timezone: true,
+                },
+              },
             },
-            campaign_id: "campaign_123",
-            matched_at: "2024-01-01T00:00:00+00:00",
-            expires_at: "2024-01-02T00:00:00+00:00",
+            deeplink: {
+              id: "test_id",
+              target_url: "https://example.com",
+              metadata: {
+                campaign: "test_campaign",
+              },
+              campaign_id: "campaign_123",
+              matched_at: "2024-01-01T00:00:00+00:00",
+              expires_at: "2024-01-02T00:00:00+00:00",
+            },
           },
-          confidence_score: 0.95,
-          ttl_seconds: 86400,
-        },
-        deep_link: null,
-        attribution: null,
+        ],
+        ttl_seconds: 86400,
       };
 
       fetchMock
@@ -223,11 +300,34 @@ describe("DeepLinkNow Tests", () => {
       const result = await DeepLinkNow.findDeferredUser();
 
       expect(result).toBeDefined();
-      expect(result?.match.deeplink).toBeDefined();
-      expect(result?.match.deeplink?.id).toBe("test_id");
-      expect(result?.match.deeplink?.target_url).toBe("https://example.com");
-      expect(result?.match.confidence_score).toBe(0.95);
-      expect(result?.match.ttl_seconds).toBe(86400);
+      expect(result?.matches?.[0]?.confidence_score).toBe(0.95);
+      expect(
+        result?.matches?.[0]?.match_details?.ip_match?.matched,
+      ).toBeTruthy();
+      expect(
+        result?.matches?.[0]?.match_details?.device_match?.matched,
+      ).toBeTruthy();
+      expect(result?.matches?.[0]?.match_details?.time_proximity?.score).toBe(
+        1,
+      );
+      expect(
+        result?.matches?.[0]?.match_details?.locale_match?.matched,
+      ).toBeTruthy();
+      expect(result?.matches?.[0]?.deeplink?.id).toBe("test_id");
+      expect(result?.matches?.[0]?.deeplink?.target_url).toBe(
+        "https://example.com",
+      );
+      expect(result?.matches?.[0]?.deeplink?.metadata?.campaign).toBe(
+        "test_campaign",
+      );
+      expect(result?.matches?.[0]?.deeplink?.campaign_id).toBe("campaign_123");
+      expect(result?.matches?.[0]?.deeplink?.matched_at).toBe(
+        "2024-01-01T00:00:00+00:00",
+      );
+      expect(result?.matches?.[0]?.deeplink?.expires_at).toBe(
+        "2024-01-02T00:00:00+00:00",
+      );
+      expect(result?.ttl_seconds).toBe(86400);
     });
   });
 });

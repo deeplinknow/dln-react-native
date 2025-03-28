@@ -49,44 +49,159 @@ class DeepLinkNow {
     console.warn("[DeepLinkNow]", ...args);
   }
 
-  private async getFingerprint(): Promise<Omit<Fingerprint, "ip_address">> {
+  private async getFingerprint(): Promise<Fingerprint> {
+    // Get device model using Platform constants
     const deviceModel = Platform.select({
       ios: NativeModules.DeviceInfo?.deviceName || "unknown",
       android: NativeModules.DeviceInfo?.model || "unknown",
     });
 
+    // Get OS version directly from Platform.Version
+    const osVersion = String(Platform.Version);
+
+    // Get language and locale using platform-specific reliable methods
+    let language = "en";
+    try {
+      if (Locale && typeof Locale.getDefault === "function") {
+        const localeResult = Locale.getDefault();
+        if (typeof localeResult === "string") {
+          language = localeResult;
+        }
+      } else if (
+        Platform.OS === "ios" &&
+        NativeModules.SettingsManager?.settings
+      ) {
+        language =
+          NativeModules.SettingsManager.settings.AppleLocale ||
+          NativeModules.SettingsManager.settings.AppleLanguages?.[0] ||
+          "en";
+      } else if (Platform.OS === "android" && NativeModules.I18nManager) {
+        language = NativeModules.I18nManager.localeIdentifier || "en";
+      } else {
+        language = Intl?.DateTimeFormat()?.resolvedOptions()?.locale || "en";
+      }
+    } catch (e) {
+      this.warn("Failed to get language:", e);
+      language = "en"; // Fallback to English
+    }
+
+    // Get timezone using platform-specific reliable methods
+    let timezone = "UTC";
+    try {
+      if (TimeZone && typeof TimeZone.getDefault === "function") {
+        const timezoneResult = TimeZone.getDefault();
+        if (typeof timezoneResult === "string") {
+          timezone = timezoneResult;
+        }
+      } else if (
+        Platform.OS === "ios" &&
+        NativeModules.SettingsManager?.settings
+      ) {
+        timezone =
+          NativeModules.SettingsManager.settings.AppleTimeZone || "UTC";
+      } else {
+        timezone = Intl?.DateTimeFormat()?.resolvedOptions()?.timeZone || "UTC";
+      }
+    } catch (e) {
+      this.warn("Failed to get timezone:", e);
+      timezone = "UTC"; // Fallback to UTC
+    }
+
     // Get Android ID if on Android platform
     let deviceId = null;
-    if (Platform.OS === "android" && NativeModules.DeviceInfo?.getAndroidId) {
+    if (Platform.OS === "android") {
       try {
-        deviceId = await NativeModules.DeviceInfo.getAndroidId();
+        if (NativeModules.DeviceInfo?.getAndroidId) {
+          deviceId = await NativeModules.DeviceInfo.getAndroidId();
+        }
       } catch (e) {
         this.warn("Failed to get Android ID:", e);
       }
     }
 
+    // Get screen dimensions and pixel ratio
+    let screenWidth = undefined;
+    let screenHeight = undefined;
+    let pixelRatio = undefined;
+
+    try {
+      const { Dimensions } = require("react-native");
+      const window = Dimensions.get("window");
+      screenWidth = window.width;
+      screenHeight = window.height;
+      pixelRatio = Dimensions.get("screen").scale;
+    } catch (e) {
+      this.warn("Failed to get screen dimensions:", e);
+    }
+
+    // Generate user agent string that matches web format
+    const userAgent =
+      Platform.select({
+        ios: `Mozilla/5.0 (${deviceModel}; CPU ${Platform.OS} ${osVersion} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${osVersion} Mobile/15E148 Safari/604.1`,
+        android: `Mozilla/5.0 (Linux; Android ${osVersion}; ${deviceModel}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36`,
+      }) || `DeepLinkNow-ReactNative/${Platform.OS}`;
+
+    // Generate hardware fingerprint
+    const hardwareFingerprint = this.generateHardwareFingerprint(
+      Platform.OS,
+      screenWidth,
+      screenHeight,
+      pixelRatio,
+      language,
+      timezone,
+    );
+
     return {
-      user_agent:
-        Platform.OS === "android"
-          ? `DLN-Android/${Platform.Version}`
-          : `DeepLinkNow-ReactNative/${Platform.OS}`,
+      user_agent: userAgent,
       platform: Platform.OS === "ios" ? "ios" : "android",
-      os_version: String(Platform.Version),
+      os_version: osVersion,
       device_model: deviceModel,
-      language:
-        Locale.getDefault?.() ||
-        Intl.DateTimeFormat().resolvedOptions().locale ||
-        "en",
-      timezone:
-        TimeZone.getDefault?.() ||
-        Intl.DateTimeFormat().resolvedOptions().timeZone,
+      language,
+      timezone,
       installed_at: this.installTime,
       last_opened_at: new Date().toISOString(),
       device_id: deviceId,
       advertising_id: null,
       vendor_id: null,
-      hardware_fingerprint: null,
+      hardware_fingerprint: hardwareFingerprint,
+      screen_width: screenWidth,
+      screen_height: screenHeight,
+      pixel_ratio: pixelRatio,
     };
+  }
+
+  private simpleHash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(16);
+  }
+
+  private generateHardwareFingerprint(
+    platform: string,
+    screenWidth: number | null,
+    screenHeight: number | null,
+    pixelRatio: number | null,
+    language: string,
+    timezone: string,
+  ): string {
+    const components = [
+      platform,
+      String(Platform.Version),
+      String(screenWidth),
+      String(screenHeight),
+      String(pixelRatio),
+      language,
+      timezone,
+    ];
+
+    // Create a deterministic string from components
+    const fingerprintString = components.join("|");
+
+    return this.simpleHash(fingerprintString);
   }
 
   private async makeRequest<T>(
@@ -145,16 +260,20 @@ class DeepLinkNow {
 
     if (response) {
       // Cache valid domains
-      response.app.custom_domains
-        .filter((domain) => domain.domain && domain.verified)
-        .forEach((domain) => {
-          if (domain.domain) this.validDomains.add(domain.domain);
-        });
+      response?.app?.custom_domains
+        ?.filter(
+          (domain: { domain: string | null; verified: boolean | null }) =>
+            domain.domain && domain.verified,
+        )
+        ?.forEach(
+          (domain: { domain: string | null; verified: boolean | null }) => {
+            if (domain.domain) this.validDomains.add(domain.domain);
+          },
+        );
 
       this.log("Init response:", response);
+      this.log("Successfully initialized with config:", this.config);
     }
-
-    this.log("Initialized with config:", this.config);
   }
 
   isValidDomain(domain: string): boolean {
@@ -188,16 +307,29 @@ class DeepLinkNow {
     this.log("Finding deferred user...");
 
     const fingerprint = await this.getFingerprint();
-
-    const matchRequest: MatchRequestBody = {
-      fingerprint,
+    const matchRequest = {
+      user_agent: fingerprint.user_agent,
+      platform: fingerprint.platform,
+      os_version: fingerprint.os_version,
+      device_model: fingerprint.device_model,
+      language: fingerprint.language,
+      timezone: fingerprint.timezone,
+      installed_at: fingerprint.installed_at,
+      last_opened_at: fingerprint.last_opened_at,
+      device_id: fingerprint.device_id,
+      advertising_id: fingerprint.advertising_id,
+      vendor_id: fingerprint.vendor_id,
+      hardware_fingerprint: fingerprint.hardware_fingerprint,
+      pixel_ratio: fingerprint.pixel_ratio,
+      screen_height: fingerprint.screen_height,
+      screen_width: fingerprint.screen_width,
     };
 
     this.log("Sending match request:", matchRequest);
 
     const response = await this.makeRequest<MatchResponse>("match", {
       method: "POST",
-      body: JSON.stringify(matchRequest),
+      body: JSON.stringify({ fingerprint: matchRequest }),
     });
 
     if (response) {

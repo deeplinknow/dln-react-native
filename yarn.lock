@@ -1637,7 +1637,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@deeplinknow/react-native@workspace:.":
+"@deeplinknow/react-native@workspace:., @deeplinknow/react-native@workspace:^":
   version: 0.0.0-use.local
   resolution: "@deeplinknow/react-native@workspace:."
   dependencies:
@@ -11502,6 +11502,7 @@ __metadata:
   resolution: "react-native-deeplink-now-example@workspace:example"
   dependencies:
     "@babel/core": ^7.20.0
+    "@deeplinknow/react-native": "workspace:^"
     "@expo/metro-runtime": ~4.0.1
     expo: ~52.0.35
     expo-status-bar: ~2.0.1

@@ -9,6 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@deeplinknow/react-native": "workspace:^",
     "@expo/metro-runtime": "~4.0.1",
     "expo": "~52.0.35",
     "expo-status-bar": "~2.0.1",
