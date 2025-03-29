@@ -15,8 +15,8 @@
     "lint:fix": "eslint \"**/*.{js,ts,tsx}\" --fix",
     "clean": "del-cli lib",
     "prepare": "bob build && eslint \"**/*.{js,ts,tsx}\" --fix",
-    "release": "release-it",
-    "release-all": "yarn lint:fix && yarn prepare && git add -A && git commit -m 'chore: prepare release' --no-verify && git push && yarn release"
+    "release": "yarn clean &&yarn lint:fix && yarn prepare && git add -A && git commit -m 'chore: prepare release' --no-verify && git push && yarn release-it",
+    "release-it": "release-it"
   },
   "exports": {
     ".": {

@@ -15,6 +15,7 @@ type Match = DeferredUserResponse["matches"][0];
 export default function App() {
   const [matches, setMatches] = useState<Match[] | null>(null);
   const [isInitialised, setIsInitialised] = useState(false);
+  const [clipboardResult, setClipboardResult] = useState<string | null>(null);
 
   async function initDln() {
     await DeepLinkNow.initialize("web-test-api-key", {
@@ -39,6 +40,11 @@ export default function App() {
     );
   }
 
+  async function checkClipboard() {
+    const result = await DeepLinkNow.checkClipboard();
+    setClipboardResult(result);
+  }
+
   return (
     <ScrollView
       style={styles.outerStyle}
@@ -57,6 +63,14 @@ export default function App() {
       <Pressable onPress={findDeferredUser} style={styles.button}>
         <Text style={styles.buttonText}>Find Deferred User</Text>
       </Pressable>
+      <Pressable onPress={checkClipboard} style={styles.button}>
+        <Text style={styles.buttonText}>Check Clipboard</Text>
+      </Pressable>
+      {clipboardResult && (
+        <Text style={styles.resultText}>
+          Clipboard Result: {clipboardResult}
+        </Text>
+      )}
 
       {!!matches?.length && (
         <View>

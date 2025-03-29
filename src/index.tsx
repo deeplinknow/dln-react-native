@@ -29,10 +29,7 @@ class DeepLinkNow {
   };
   private installTime: string = new Date().toISOString();
 
-  private validDomains: Set<string> = new Set([
-    "deeplinknow.com",
-    "deeplink.now",
-  ]);
+  private validDomains: Set<string> = new Set([]);
 
   private log(...args: any[]) {
     if (this.config.enableLogs) {
@@ -42,6 +39,112 @@ class DeepLinkNow {
 
   private warn(...args: any[]) {
     console.warn("[DeepLinkNow]", ...args);
+  }
+
+  async initialize(apiKey: string, config?: DeepLinkNowConfig) {
+    if (!apiKey || typeof apiKey !== "string") {
+      this.warn("Invalid API key provided");
+      return;
+    }
+
+    this.apiKey = apiKey;
+    this.config = {
+      ...this.config,
+      ...config,
+    };
+
+    // Hit the /v1/sdk/init endpoint
+    const response = await this.makeRequest<InitResponse>("init", {
+      method: "POST",
+      body: JSON.stringify({ api_key: apiKey }),
+    });
+
+    if (response) {
+      const appName = response.app.alias;
+
+      // Set up the base domains
+      this.validDomains.add(`${appName}.deeplinknow.com`);
+      this.validDomains.add(`${appName}.deeplink.now`);
+
+      // Cache valid domains
+      response?.app?.custom_domains
+        ?.filter(
+          (domain: { domain: string | null; verified: boolean | null }) =>
+            domain.domain && domain.verified,
+        )
+        ?.forEach(
+          (domain: { domain: string | null; verified: boolean | null }) => {
+            if (domain.domain) this.validDomains.add(domain.domain);
+          },
+        );
+
+      this.log("Init response:", response);
+      this.log("Successfully initialized with config:", this.config);
+    }
+  }
+
+  isValidDomain(domain: string): boolean {
+    return this.validDomains.has(domain);
+  }
+
+  async hasDeepLinkToken(): Promise<boolean> {
+    try {
+      const { Clipboard } = require("react-native");
+      const content = await Clipboard.getString();
+      return content?.startsWith("dln://") ?? false;
+    } catch (e) {
+      this.warn("Failed to check clipboard:", e);
+      return false;
+    }
+  }
+
+  async checkClipboard(): Promise<string | null> {
+    if (!this.apiKey) {
+      this.warn("SDK not initialized. Call initialize() first");
+      return null;
+    }
+
+    try {
+      const { Clipboard } = require("react-native");
+      const content = await Clipboard.getString();
+      // example content = https://test-app.deeplinknow.com/params?1234n4
+      const domain = content?.split("://")?.[1]?.split("/")?.[0];
+      if (
+        domain?.includes("deeplinknow.com") ||
+        domain?.includes("deeplink.now") ||
+        this.validDomains.has(domain)
+      ) {
+        this.log("Found deep link token in clipboard");
+        return content;
+      }
+    } catch (e) {
+      this.warn("Failed to read clipboard:", e);
+    }
+
+    return null;
+  }
+
+  parseDeepLink(
+    url: string,
+  ): { path: string; parameters: Record<string, string> } | null {
+    try {
+      const urlObj = new URL(url);
+      if (!this.isValidDomain(urlObj.hostname)) {
+        return null;
+      }
+
+      const parameters: Record<string, string> = {};
+      urlObj.searchParams.forEach((value, key) => {
+        parameters[key] = value;
+      });
+
+      return {
+        path: urlObj.pathname,
+        parameters,
+      };
+    } catch {
+      return null;
+    }
   }
 
   private async getFingerprint(): Promise<Fingerprint> {
@@ -234,69 +337,6 @@ class DeepLinkNow {
       return data as T;
     } catch (error) {
       this.warn("API request failed:", error);
-      return null;
-    }
-  }
-
-  async initialize(apiKey: string, config?: DeepLinkNowConfig) {
-    if (!apiKey || typeof apiKey !== "string") {
-      this.warn("Invalid API key provided");
-      return;
-    }
-
-    this.apiKey = apiKey;
-    this.config = {
-      ...this.config,
-      ...config,
-    };
-
-    // Hit the /v1/sdk/init endpoint
-    const response = await this.makeRequest<InitResponse>("init", {
-      method: "POST",
-      body: JSON.stringify({ api_key: apiKey }),
-    });
-
-    if (response) {
-      // Cache valid domains
-      response?.app?.custom_domains
-        ?.filter(
-          (domain: { domain: string | null; verified: boolean | null }) =>
-            domain.domain && domain.verified,
-        )
-        ?.forEach(
-          (domain: { domain: string | null; verified: boolean | null }) => {
-            if (domain.domain) this.validDomains.add(domain.domain);
-          },
-        );
-
-      this.log("Init response:", response);
-      this.log("Successfully initialized with config:", this.config);
-    }
-  }
-
-  isValidDomain(domain: string): boolean {
-    return this.validDomains.has(domain);
-  }
-
-  parseDeepLink(
-    url: string,
-  ): { path: string; parameters: Record<string, string> } | null {
-    try {
-      const urlObj = new URL(url);
-      if (!this.isValidDomain(urlObj.hostname)) {
-        return null;
-      }
-
-      const parameters: Record<string, string> = {};
-      urlObj.searchParams.forEach((value, key) => {
-        parameters[key] = value;
-      });
-
-      return {
-        path: urlObj.pathname,
-        parameters,
-      };
-    } catch {
       return null;
     }
   }

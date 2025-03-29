@@ -126,6 +126,7 @@ export type MatchResponse = {
 export interface InitResponse {
   app: {
     id: string;
+    alias: string;
     name: string;
     timezone: string;
     android_package_name: string | null;
