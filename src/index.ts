@@ -1,4 +1,5 @@
 import { Platform, NativeModules } from "react-native";
+import { Clipboard } from "./services/Clipboard";
 import type { MatchResponse, Fingerprint, InitResponse } from "./types";
 
 // We need to get these from NativeModules since they're platform-specific
@@ -89,7 +90,6 @@ class DeepLinkNow {
 
   async hasDeepLinkToken(): Promise<boolean> {
     try {
-      const { Clipboard } = require("react-native");
       const content = await Clipboard.getString();
       return content?.startsWith("dln://") ?? false;
     } catch (e) {
@@ -105,14 +105,14 @@ class DeepLinkNow {
     }
 
     try {
-      const { Clipboard } = require("react-native");
       const content = await Clipboard.getString();
       // example content = https://test-app.deeplinknow.com/params?1234n4
       const domain = content?.split("://")?.[1]?.split("/")?.[0];
       if (
-        domain?.includes("deeplinknow.com") ||
-        domain?.includes("deeplink.now") ||
-        this.validDomains.has(domain)
+        domain &&
+        (domain?.includes("deeplinknow.com") ||
+          domain?.includes("deeplink.now") ||
+          this.validDomains.has(domain))
       ) {
         this.log("Found deep link token in clipboard");
         return content;
