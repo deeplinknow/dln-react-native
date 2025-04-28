@@ -2,7 +2,7 @@
   "compilerOptions": {
     "baseUrl": "./",
     "paths": {
-      "@deeplinknow/react-native": ["./src/index"]
+      "@deeplinknow/react-native": ["./src/index.ts"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,

@@ -2,7 +2,7 @@
   "name": "@deeplinknow/react-native",
   "version": "1.1.10",
   "description": "React Native + Expo SDK for the Deeplink Now deferred deep linking platform",
-  "source": "./src/index.tsx",
+  "source": "./src/index.ts",
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",
   "types": "./lib/typescript/commonjs/index.d.ts",
@@ -88,9 +88,9 @@
     "@types/react": "^18.2.44"
   },
   "peerDependencies": {
+    "expo": "*",
     "react": "*",
-    "react-native": "*",
-    "expo": "*"
+    "react-native": "*"
   },
   "workspaces": [
     ".",

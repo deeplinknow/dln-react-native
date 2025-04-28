@@ -18,7 +18,6 @@ export type {
 export interface DeepLinkNowConfig {
   enableLogs?: boolean;
   apiKey?: string;
-  customDomain?: string;
 }
 
 export type DeferredUserResponse = MatchResponse;
