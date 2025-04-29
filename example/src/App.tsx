@@ -12,20 +12,16 @@ import type { DeferredUserResponse } from "@deeplinknow/react-native";
 
 type Match = DeferredUserResponse["matches"][0];
 
+DeepLinkNow.initialize("web-test-api-key", {
+  enableLogs: __DEV__,
+});
+
 export default function App() {
   const [matches, setMatches] = useState<Match[] | null>(null);
-  const [isInitialised, setIsInitialised] = useState(false);
   const [clipboardResult, setClipboardResult] = useState<string | null>(null);
 
-  async function initDln() {
-    await DeepLinkNow.initialize("web-test-api-key", {
-      enableLogs: __DEV__,
-    });
-
-    setIsInitialised(true);
-  }
-
   async function findDeferredUser() {
+    setMatches(null);
     const response = await DeepLinkNow.findDeferredUser();
     console.log(JSON.stringify(response, null, 2));
 
@@ -52,11 +48,6 @@ export default function App() {
     >
       <Text style={styles.header}>DeepLinkNow</Text>
 
-      <Pressable onPress={initDln} style={styles.button}>
-        <Text style={styles.buttonText}>
-          {!isInitialised ? "Init DLN" : "Initialised!"}
-        </Text>
-      </Pressable>
       <Pressable onPress={visitExternalDeeplinkPage} style={styles.button}>
         <Text style={styles.buttonText}>Visit External Deeplink Page</Text>
       </Pressable>
@@ -81,6 +72,7 @@ export default function App() {
     </ScrollView>
   );
 }
+
 function Match({ match }: { match: Match }) {
   return (
     <View style={styles.matchCard}>
