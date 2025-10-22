@@ -1,5 +1,6 @@
 import { requireNativeModule } from "expo-modules-core";
 import { NativeModules, Platform } from "react-native";
+
 import type { Fingerprint, InitResponse, MatchResponse } from "./types";
 
 // Import the Expo module

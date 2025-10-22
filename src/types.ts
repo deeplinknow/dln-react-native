@@ -134,10 +134,10 @@ export interface InitResponse {
     ios_bundle_id: string | null;
     ios_app_store_id: string | null;
     ios_app_prefix: string | null;
-    custom_domains: Array<{
+    custom_domains: {
       domain: string | null;
       verified: boolean | null;
-    }>;
+    }[];
   };
   account: {
     status: "active" | "suspended" | "expired";

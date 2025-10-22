@@ -1,7 +1,14 @@
-import { useState } from 'react';
-import { StyleSheet, Text, View, Button, ScrollView, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import DeepLinkNow from '@deeplinknow/react-native';
+import DeepLinkNow from "@deeplinknow/react-native";
+import { useState } from "react";
+import {
+  StyleSheet,
+  Text,
+  View,
+  Button,
+  ScrollView,
+  Alert,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function App() {
   const [initialized, setInitialized] = useState(false);
@@ -9,15 +16,15 @@ export default function App() {
   const [clipboardContent, setClipboardContent] = useState<string | null>(null);
   const [parseResult, setParseResult] = useState<any>(null);
 
-  const apiKey = 'web-test-api-key'; // Replace with your actual API key for testing
-  
+  const apiKey = "web-test-api-key"; // Replace with your actual API key for testing
+
   const handleInitialize = async () => {
     try {
       await DeepLinkNow.initialize(apiKey, { enableLogs: true });
       setInitialized(true);
-      Alert.alert('Success', 'DeepLinkNow initialized!');
+      Alert.alert("Success", "DeepLinkNow initialized!");
     } catch (error) {
-      Alert.alert('Error', `Failed to initialize: ${error}`);
+      Alert.alert("Error", `Failed to initialize: ${error}`);
     }
   };
 
@@ -25,9 +32,9 @@ export default function App() {
     try {
       const result = await DeepLinkNow.findDeferredUser();
       setMatchResult(result);
-      Alert.alert('Match Result', JSON.stringify(result, null, 2));
+      Alert.alert("Match Result", JSON.stringify(result, null, 2));
     } catch (error) {
-      Alert.alert('Error', `Failed to find deferred user: ${error}`);
+      Alert.alert("Error", `Failed to find deferred user: ${error}`);
     }
   };
 
@@ -35,25 +42,29 @@ export default function App() {
     try {
       const content = await DeepLinkNow.checkClipboard();
       setClipboardContent(content);
-      Alert.alert('Clipboard', content || 'No deep link found in clipboard');
+      Alert.alert("Clipboard", content || "No deep link found in clipboard");
     } catch (error) {
-      Alert.alert('Error', `Failed to check clipboard: ${error}`);
+      Alert.alert("Error", `Failed to check clipboard: ${error}`);
     }
   };
 
   const handleParseDeepLink = () => {
-    const testUrl = 'https://test-app.deeplinknow.com/products/123?utm_source=email';
+    const testUrl =
+      "https://test-app.deeplinknow.com/products/123?utm_source=email";
     const result = DeepLinkNow.parseDeepLink(testUrl);
     setParseResult(result);
-    Alert.alert('Parse Result', JSON.stringify(result, null, 2));
+    Alert.alert("Parse Result", JSON.stringify(result, null, 2));
   };
 
   const handleCheckDeferredDeepLink = async () => {
     try {
       const result = await DeepLinkNow.checkDeferredDeepLink();
-      Alert.alert('Deferred Deep Link (Android)', JSON.stringify(result, null, 2));
+      Alert.alert(
+        "Deferred Deep Link (Android)",
+        JSON.stringify(result, null, 2),
+      );
     } catch (error) {
-      Alert.alert('Error', `Failed to check deferred deep link: ${error}`);
+      Alert.alert("Error", `Failed to check deferred deep link: ${error}`);
     }
   };
 
@@ -63,7 +74,7 @@ export default function App() {
         <View style={styles.header}>
           <Text style={styles.title}>DeepLinkNow SDK Test</Text>
           <Text style={styles.subtitle}>
-            Status: {initialized ? '✅ Initialized' : '⚠️ Not initialized'}
+            Status: {initialized ? "✅ Initialized" : "⚠️ Not initialized"}
           </Text>
         </View>
 
@@ -97,7 +108,8 @@ export default function App() {
           />
           {parseResult && (
             <Text style={styles.result}>
-              Path: {parseResult.path}{'\n'}
+              Path: {parseResult.path}
+              {"\n"}
               Params: {JSON.stringify(parseResult.parameters, null, 2)}
             </Text>
           )}
@@ -112,7 +124,8 @@ export default function App() {
           />
           {matchResult && (
             <Text style={styles.result}>
-              Matches: {matchResult.matches?.length || 0}{'\n'}
+              Matches: {matchResult.matches?.length || 0}
+              {"\n"}
               TTL: {matchResult.ttl_seconds}s
             </Text>
           )}
@@ -140,33 +153,33 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
   },
   scrollView: {
     flex: 1,
   },
   header: {
     padding: 20,
-    backgroundColor: '#007AFF',
+    backgroundColor: "#007AFF",
     marginBottom: 20,
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
+    fontWeight: "bold",
+    color: "white",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: 'white',
+    color: "white",
   },
   section: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     padding: 16,
     marginBottom: 12,
     marginHorizontal: 12,
     borderRadius: 8,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -174,25 +187,25 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 12,
-    color: '#333',
+    color: "#333",
   },
   result: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: "#f0f0f0",
     borderRadius: 4,
-    fontFamily: 'monospace',
+    fontFamily: "monospace",
     fontSize: 12,
   },
   footer: {
     padding: 20,
-    alignItems: 'center',
+    alignItems: "center",
   },
   footerText: {
     fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
+    color: "#666",
+    fontStyle: "italic",
   },
 });

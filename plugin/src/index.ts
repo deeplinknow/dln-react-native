@@ -1,4 +1,5 @@
 import { type ConfigPlugin, createRunOncePlugin } from "@expo/config-plugins";
+
 import { withDeepLinkNowAndroid } from "./withDeepLinkNowAndroid";
 import { withDeepLinkNowiOS } from "./withDeepLinkNowiOS";
 
