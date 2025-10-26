@@ -225,7 +225,8 @@ class DeepLinkNow {
       // Try to get full iOS version from PlatformConstants (e.g., "17.4.1")
       try {
         osVersion =
-          NativeModules.PlatformConstants?.osVersion || String(Platform.Version);
+          NativeModules.PlatformConstants?.osVersion ||
+          String(Platform.Version);
       } catch (e) {
         osVersion = String(Platform.Version);
         this.warn("Failed to get full iOS version, using major version:", e);
