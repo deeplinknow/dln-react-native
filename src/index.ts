@@ -217,8 +217,22 @@ class DeepLinkNow {
           ? "Android"
           : "unknown";
 
-    // Get OS version directly from Platform.Version
-    const osVersion = String(Platform.Version);
+    // Get OS version
+    // On iOS, Platform.Version is a number (e.g., 17), so we need to get the full version string
+    // On Android, Platform.Version is already a string (e.g., "14")
+    let osVersion: string;
+    if (Platform.OS === "ios") {
+      // Try to get full iOS version from PlatformConstants (e.g., "17.4.1")
+      try {
+        osVersion =
+          NativeModules.PlatformConstants?.osVersion || String(Platform.Version);
+      } catch (e) {
+        osVersion = String(Platform.Version);
+        this.warn("Failed to get full iOS version, using major version:", e);
+      }
+    } else {
+      osVersion = String(Platform.Version);
+    }
 
     // Get full locale identifier (e.g., "en-US" instead of just "en") to match web/iOS/Android format
     let language = "en-US";
@@ -300,9 +314,15 @@ class DeepLinkNow {
     try {
       const { Dimensions } = require("react-native");
       const window = Dimensions.get("window");
+      const scale = Dimensions.get("screen").scale;
+
+      // Use LOGICAL pixels (CSS pixels) to match web behavior
+      // window.screen.width on iOS Safari returns logical/CSS pixels, NOT physical
+      // Database analysis: production stores 393×852 (logical), not 1179×2556 (physical)
+      // Example: iPhone 14 Pro logical=393, physical=393×3=1179
       screenWidth = window.width;
       screenHeight = window.height;
-      pixelRatio = Dimensions.get("screen").scale;
+      pixelRatio = scale;
     } catch (e) {
       this.warn("Failed to get screen dimensions:", e);
     }
