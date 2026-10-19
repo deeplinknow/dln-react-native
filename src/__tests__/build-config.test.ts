@@ -8,6 +8,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -132,6 +133,32 @@ function makeApp(kind: "expo" | "bare") {
   return join(app, "ios");
 }
 
+/**
+ * An Expo app installed with an isolated linker (pnpm, Bun): the app lists `expo` only,
+ * `node_modules/expo` is a symlink into the store, and `expo-modules-core` sits next to
+ * expo in the store, not in the app's node_modules (the Expo 54 template layout).
+ */
+function makeIsolatedExpoApp() {
+  const app = dirname(makeApp("bare"));
+  const store = join(
+    app,
+    "node_modules",
+    ".pnpm",
+    "expo@54.0.0",
+    "node_modules"
+  );
+  for (const name of ["expo", "expo-modules-core"]) {
+    mkdirSync(join(store, name), { recursive: true });
+    writeFileSync(
+      join(store, name, "package.json"),
+      JSON.stringify({ name, version: "1.0.0", main: "index.js" })
+    );
+    writeFileSync(join(store, name, "index.js"), "");
+  }
+  symlinkSync(join(store, "expo"), join(app, "node_modules", "expo"), "dir");
+  return join(app, "ios");
+}
+
 const describeRuby = hasRuby() ? describe : describe.skip;
 
 describeRuby("RN-19: podspec flavor selection (evaluated with Ruby)", () => {
@@ -142,6 +169,14 @@ describeRuby("RN-19: podspec flavor selection (evaluated with Ruby)", () => {
     );
     expect(res.source_files.join(" ")).not.toContain("DeepLinkNowTurbo");
     expect(Object.keys(res.deps)).toContain("ExpoModulesCore");
+  });
+
+  it("RN-19: an Expo app with an isolated linker (pnpm/Bun, expo-modules-core only reachable via expo) still compiles the Expo module", () => {
+    const res = evalPodspec({ installationRoot: makeIsolatedExpoApp() });
+    expect(res.source_files).toEqual(
+      expect.arrayContaining(["ios/DeeplinknowReactNativeModule.swift"])
+    );
+    expect(res.source_files.join(" ")).not.toContain("DeepLinkNowTurbo");
   });
 
   it("RN-19: in a bare app the Turbo/bridge module is compiled", () => {
@@ -443,6 +478,11 @@ describe("RN-19: react-native.config.js only autolinks Turbo/bridge outside Expo
     expect(loadRnConfig(app)).toEqual({ android: null, ios: null });
   });
 
+  it("RN-19: an Expo app with an isolated linker (pnpm/Bun) gets no React Native CLI entries either", () => {
+    const app = dirname(makeIsolatedExpoApp());
+    expect(loadRnConfig(app)).toEqual({ android: null, ios: null });
+  });
+
   it("RN-19: a bare app autolinks the podspec and DeepLinkNowPackage", () => {
     const app = dirname(makeApp("bare"));
     const platforms = loadRnConfig(app);
@@ -460,6 +500,52 @@ describe("RN-19: react-native.config.js only autolinks Turbo/bridge outside Expo
       android: null,
       ios: null,
     });
+  });
+});
+
+describe("RN-24 / RN-25: Android referrer wait, optional keys and packaging", () => {
+  const glue = [
+    "android/src/main/java/expo/modules/deeplinknowreactnative/DeeplinknowReactNativeModule.kt",
+    "android/src/newarch/java/com/deeplinknow/reactnative/DeepLinkNowModule.kt",
+    "android/src/oldarch/java/com/deeplinknow/reactnative/DeepLinkNowModule.kt",
+  ];
+
+  it("RN-24: every Android flavor's getReferrerData waits for the referrer step (DLN.awaitReferrer)", () => {
+    for (const file of glue) {
+      const src = read(file);
+      expect(src).toContain("DLN.awaitReferrer()");
+    }
+    const ge = (a: string, b: string) => {
+      const pa = a.split(".").map(Number);
+      const pb = b.split(".").map(Number);
+      for (let i = 0; i < 3; i += 1) {
+        if (pa[i] !== pb[i]) {
+          return pa[i] > pb[i];
+        }
+      }
+      return true;
+    };
+    expect(ge(pkg.deeplinknow.androidSdkVersion, "1.2.0")).toBe(true);
+  });
+
+  it("RN-24: optional referrer keys are omitted, not sent as null", () => {
+    const src = read(
+      "android/src/shared/java/com/deeplinknow/reactnative/DLNBridgeConverters.kt"
+    );
+    for (const key of ["fpId", "deeplinkId", "campaignId"]) {
+      expect(src).not.toMatch(new RegExp(`"${key}" to `));
+    }
+  });
+
+  it("RN-25: the config plugin imports from expo/config-plugins and package.json is exported", () => {
+    for (const file of [
+      "plugin/src/index.ts",
+      "plugin/src/withDeepLinkNowAndroid.ts",
+      "plugin/src/withDeepLinkNowiOS.ts",
+    ]) {
+      expect(read(file)).not.toContain("@expo/config-plugins");
+    }
+    expect(pkg.exports["./package.json"]).toBe("./package.json");
   });
 });
 

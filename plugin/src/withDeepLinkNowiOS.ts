@@ -1,4 +1,4 @@
-import type { ConfigPlugin } from "@expo/config-plugins";
+import type { ConfigPlugin } from "expo/config-plugins";
 
 /** Adds `applinks:<domain>` for each domain to `ios.associatedDomains` (no duplicates). */
 export const withDeepLinkNowiOS: ConfigPlugin<{ domains: string[] }> = (

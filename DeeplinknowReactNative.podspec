@@ -18,22 +18,26 @@ dln_installation_root = lambda do
   end
 end
 
-# Resolves `<name>/package.json` from the app with Node's resolver (handles hoisting,
-# pnpm and monorepos). Falls back to looking in <app>/node_modules.
-dln_node_package_installed = lambda do |name, from|
-  app_root = File.expand_path('..', from)
-  found = [from, app_root].any? do |dir|
+# Resolves `<name>/package.json` with Node's resolver (handles hoisting, pnpm and
+# monorepos) from each of `dirs`, and returns the package's directory, or nil. Falls back to
+# looking in <dir>/node_modules when node isn't available.
+dln_node_package_dir = lambda do |name, dirs|
+  dirs.each do |dir|
     begin
       resolved = IO.popen(
         ['node', '--print', "require.resolve('#{name}/package.json', { paths: [#{dir.to_json}] })"],
         err: File::NULL, &:read
       ).to_s.strip
-      !resolved.empty? && File.exist?(resolved)
+      return File.dirname(resolved) if !resolved.empty? && File.exist?(resolved)
     rescue StandardError
-      false # node not available: fall through to the file check
+      # node not available: fall through to the file check
     end
   end
-  found || File.exist?(File.join(app_root, 'node_modules', name, 'package.json'))
+  dirs.each do |dir|
+    candidate = File.join(dir, 'node_modules', name)
+    return candidate if File.exist?(File.join(candidate, 'package.json'))
+  end
+  nil
 end
 
 # Expo Modules flavor when the app has both expo and expo-modules-core, so
@@ -44,7 +48,11 @@ dln_expo_modules_available = lambda do
   next false if ENV['USE_EXPO_MODULES'] == '0'
 
   root = dln_installation_root.call
-  dln_node_package_installed.call('expo-modules-core', root) && dln_node_package_installed.call('expo', root)
+  app_dirs = [root, File.expand_path('..', root)]
+  expo_dir = dln_node_package_dir.call('expo', app_dirs)
+  # Apps list `expo`, not `expo-modules-core` (Expo 54 templates). With an isolated
+  # linker (pnpm, Bun) expo-modules-core is only reachable from expo itself (RN-19).
+  !expo_dir.nil? && !dln_node_package_dir.call('expo-modules-core', app_dirs + [expo_dir]).nil?
 end
 
 use_expo_modules = dln_expo_modules_available.call

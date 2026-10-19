@@ -2,7 +2,9 @@
  * DeepLinkNow React Native / Expo example.
  *
  * The whole integration is three calls:
- *   1. DeepLinkNow.initialize(apiKey)          once, at startup (rejects with DLNError)
+ *   1. DeepLinkNow.initialize(apiKey)          once, at startup
+ *
+ * None of these throw: a failure resolves null and the error is in DeepLinkNow.lastError.
  *   2. DeepLinkNow.checkDeferredDeepLink()     once, on first launch after install
  *   3. DeepLinkNow.parseDeepLink(url)          for Universal Links / App Links that open the app
  *
@@ -59,18 +61,17 @@ export default function HomeScreen() {
   const checkDeferred = useCallback(
     async (force: boolean) => {
       setDeferredError(null);
-      try {
-        // Returns null when there is no link, or when this install has already been
-        // checked (unless force is true).
-        const link = await DeepLinkNow.checkDeferredDeepLink({
-          minConfidence,
-          force,
-        });
-        setDeferred(link);
-        // In a real app: if (link) router.push(link.fullPath)
-      } catch (e) {
-        setDeferredError(describeError(e));
+      // Returns null when there is no link, when this install has already been checked
+      // (unless force is true), or on failure (then lastError says why). Never throws.
+      const link = await DeepLinkNow.checkDeferredDeepLink({
+        minConfidence,
+        force,
+      });
+      setDeferred(link);
+      if (!link && DeepLinkNow.lastError) {
+        setDeferredError(describeError(DeepLinkNow.lastError));
       }
+      // In a real app: if (link) router.push(link.fullPath)
     },
     [minConfidence]
   );
@@ -78,13 +79,12 @@ export default function HomeScreen() {
   // 1 + 2: initialize, then check for a deferred deep link once (first launch).
   useEffect(() => {
     (async () => {
-      try {
-        await DeepLinkNow.initialize(API_KEY, { enableLogs: true });
-        setInitialized(true);
-      } catch (e) {
-        setInitError(describeError(e));
+      const app = await DeepLinkNow.initialize(API_KEY, { enableLogs: true });
+      if (!app) {
+        setInitError(describeError(DeepLinkNow.lastError));
         return;
       }
+      setInitialized(true);
       await checkDeferred(false);
     })();
     // Run once on mount.

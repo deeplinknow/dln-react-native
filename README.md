@@ -61,26 +61,23 @@ Autolinking picks the right native module (TurboModule on the new architecture, 
 ## Quick start
 
 ```ts
-import DeepLinkNow, { DLNError } from "@deeplinknow/react-native";
+import DeepLinkNow from "@deeplinknow/react-native";
 
 async function handleDeferredDeepLink() {
-  try {
-    await DeepLinkNow.initialize("your-public-api-key");
+  await DeepLinkNow.initialize("your-public-api-key");
 
-    // First launch only: iOS reads the pasteboard, then fingerprints.
-    // Android reads the Play Install Referrer, then fingerprints.
-    const link = await DeepLinkNow.checkDeferredDeepLink();
-    if (link) {
-      // e.g. link.path = "/products/123", link.queryParams = { ref: "newsletter" }
-      navigate(link.path, link.queryParams);
-    }
-  } catch (e) {
-    if (e instanceof DLNError) {
-      console.warn("DeepLinkNow:", e.code, e.message);
-    }
+  // First launch only: iOS reads the pasteboard, then fingerprints.
+  // Android reads the Play Install Referrer, then fingerprints.
+  const link = await DeepLinkNow.checkDeferredDeepLink();
+  if (link) {
+    // e.g. link.path = "/products/123", link.queryParams = { ref: "newsletter" }
+    navigate(link.path, link.queryParams);
   }
+  // No link (or a failure such as being offline): carry on to your normal start screen.
 }
 ```
+
+None of these calls throw or reject, so no `try`/`catch` is needed. A failure resolves `null`, is logged as a warning, and is kept in `DeepLinkNow.lastError` (see [Errors](#errors)).
 
 For links that open an already-installed app (Universal Links / App Links), use React Native's `Linking` and `parseDeepLink`, so deferred and direct opens route the same way:
 
@@ -97,7 +94,7 @@ Linking.addEventListener("url", ({ url }) => {
 
 The default export is a singleton.
 
-### `initialize(apiKey, config?): Promise<DLNAppInfo>`
+### `initialize(apiKey, config?): Promise<DLNAppInfo | null>`
 
 Validates the key with `POST /api/v1/sdk/init` (one request per call) and loads your link domains (`{alias}.deeplinknow.com` plus verified custom domains).
 
@@ -119,7 +116,7 @@ type DLNAppInfo = {
 };
 ```
 
-Rejects with a `DLNError` when initialization fails. Await it or attach a `.catch`. Calling it again replaces the previous config. Concurrent identical calls share one request.
+Resolves `null` when initialization fails (it never rejects); the error is in `DeepLinkNow.lastError`. Calling it again replaces the previous config. Concurrent identical calls share one request.
 
 ### `isInitialized(): boolean`
 
@@ -134,7 +131,7 @@ The one call. It runs the platform chain and stops at the first step that finds 
 | iOS | Pasteboard: the landing page copied the link before sending the user to the App Store (exact) | Fingerprint match (best effort) |
 | Android | Play Install Referrer (exact) | Fingerprint match (best effort) |
 
-It does the work once per install. After a definitive answer (a link, or nothing found), later calls resolve `null` without touching the network, clipboard or referrer, unless you pass `force: true`. Errors (offline, 5xx, …) reject and do not mark the check as done, so the next call tries again.
+It does the work once per install. After a definitive answer (a link, or nothing found), later calls resolve `null` without touching the network, clipboard or referrer, unless you pass `force: true`. Errors (offline, 5xx, not initialized, …) also resolve `null`, never reject, and do not mark the check as done, so the next call tries again. The error is in `DeepLinkNow.lastError`.
 
 ```ts
 type DeferredDeepLinkOptions = {
@@ -171,7 +168,7 @@ type DeferredDeepLink = {
 
 Clears the "already checked" flag and any cached referrer result, both in memory and on disk. Useful when testing.
 
-### `findDeferredUser(): Promise<MatchResponse>`
+### `findDeferredUser(): Promise<MatchResponse | null>`
 
 Low level. Returns every fingerprint candidate from `/api/v1/sdk/match`, unfiltered, in the server's snake_case shape:
 
@@ -196,7 +193,7 @@ type MatchResponse = {
 };
 ```
 
-Zero matches is a successful empty response. Failures reject with a `DLNError`.
+Zero matches is a successful empty response (`matches: []`). A failure resolves `null` (it never rejects), with the error in `DeepLinkNow.lastError`.
 
 ### `getReferrerData(): Promise<ReferrerData | null>`
 
@@ -227,9 +224,20 @@ The host rule used by `parseDeepLink` and `checkClipboard`.
 
 Named exports. `getModuleType()` returns `"expo" | "turbo" | "bridge" | "none"`.
 
+### `lastError: DLNError | null`
+
+The error from the most recent failed `initialize`, `checkDeferredDeepLink` or `findDeferredUser`, or `null`. The next successful call of the same kind clears it. Use it to tell "nothing found" from "something failed":
+
+```ts
+const link = await DeepLinkNow.checkDeferredDeepLink();
+if (!link && DeepLinkNow.lastError) {
+  console.log("DeepLinkNow:", DeepLinkNow.lastError.code, DeepLinkNow.lastError.message);
+}
+```
+
 ### Errors
 
-Failures reject with `DLNError` (`e.code`, plus `e.status` and `e.serverMessage` when the server sent one). The codes are the same on iOS and Android:
+`initialize`, `checkDeferredDeepLink` and `findDeferredUser` never reject: they resolve `null`, log a warning (even with `enableLogs: false`) and set `lastError`. `resetDeferredDeepLink` rejects if the native reset fails. Errors are `DLNError` instances (`e.code`, plus `e.status` and `e.serverMessage` when the server sent one). The codes are the same on iOS and Android:
 
 | Code | Meaning |
 |---|---|
@@ -255,10 +263,11 @@ The SDK never reads the IDFA or the Google Advertising ID and never triggers the
 
 The 1.2 API is additive, but a few behaviors changed to match the native SDKs:
 
-- `initialize` now resolves with `DLNAppInfo` and **rejects** on failure (it used to resolve anyway). Await it or add `.catch`.
+- `initialize` now resolves with `DLNAppInfo` (it used to resolve `undefined`). Like 1.1 it never rejects: on failure it resolves `null`, logs a warning and sets `DeepLinkNow.lastError`. Code written for 1.1 keeps working without a `try`/`catch`.
 - `checkDeferredDeepLink()` now works on iOS too and returns a `DeferredDeepLink` (`path`, `queryParams`, `source`, …). The old referrer fields `targetUrl`, `campaignId`, `metadata`, `matchedAt` and `expiresAt` are still there, and `id` is a deprecated alias of `deeplinkId`. The referrer-only fields are optional now, because clipboard results don't have them.
-- `findDeferredUser()` returns the snake_case server shape on every platform (with native modules it used to return camelCase), adds `match_quality`, `deeplink.query_params` and `deeplink.full_path`, and rejects on failure instead of resolving `null`.
+- `findDeferredUser()` returns the snake_case server shape on every platform (with native modules it used to return camelCase), and adds `match_quality`, `deeplink.query_params` and `deeplink.full_path`. As in 1.1, a failure resolves `null`; the error is now also available as `DeepLinkNow.lastError`.
 - `parseDeepLink()` adds `queryParams`, `fullPath` and `url`. `parameters` is kept as a deprecated flat string map.
+- New: `DeepLinkNow.lastError` holds the typed `DLNError` of the last failed call, so you can tell "nothing found" from "something failed" without a `try`/`catch`.
 - `clearReferrerCache()` is deprecated. Use `resetDeferredDeepLink()`, which works on both platforms.
 - `*.deeplink.now` hosts are no longer trusted. They were never DeepLinkNow domains.
 - The `config.apiKey` field is ignored. Pass the key as the first argument.

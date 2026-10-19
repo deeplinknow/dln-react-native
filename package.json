@@ -26,7 +26,8 @@
       "types": "./build/index.d.ts",
       "default": "./build/index.js"
     },
-    "./app.plugin.js": "./app.plugin.js"
+    "./app.plugin.js": "./app.plugin.js",
+    "./package.json": "./package.json"
   },
   "main": "./build/index.js",
   "source": "./src/index.ts",
@@ -140,8 +141,8 @@
     }
   },
   "deeplinknow": {
-    "iosSdkVersion": "1.1.0",
-    "androidSdkVersion": "1.1.0"
+    "iosSdkVersion": "1.2.0",
+    "androidSdkVersion": "1.2.0"
   },
   "expo": {
     "plugin": {

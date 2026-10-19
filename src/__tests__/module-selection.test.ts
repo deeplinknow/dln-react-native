@@ -4,6 +4,7 @@ import {
   loadSdk,
   MATCH_BODY,
   mockFetch,
+  outcome,
   silenceConsole,
 } from "./support/helpers";
 
@@ -125,8 +126,11 @@ describe("RN-23: Jest tests cover the JS layer (module selection, shapes, errors
       native: { findDeferredUser: async () => Promise.reject(err) },
     });
     await sdk.initialize("key_live_abcdef123456");
-    await expect(sdk.findDeferredUser()).rejects.toMatchObject({
-      code: "network",
+    expect(await outcome(sdk, sdk.findDeferredUser())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "network",
+      },
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });

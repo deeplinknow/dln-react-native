@@ -150,10 +150,11 @@ object DLNBridgeConverters {
             "id" to dl.id,
             "targetUrl" to dl.targetUrl,
             "metadata" to dl.metadata,
-            "campaignId" to dl.campaignId,
             "matchedAt" to dl.matchedAt,
             "expiresAt" to dl.expiresAt,
         )
+        // Optional keys are omitted, not null, to match the TS types (`campaignId?: string`).
+        dl.campaignId?.let { m["campaignId"] = it }
         dl.queryParams?.let { m["queryParams"] = queryParams(dl.typedQueryParams) }
         dl.fullPath?.let { m["fullPath"] = it }
         return m
@@ -162,10 +163,11 @@ object DLNBridgeConverters {
     fun referrerData(r: ReferrerData): Map<String, Any?> {
         val m = linkedMapOf<String, Any?>(
             "referrerString" to r.referrerString,
-            "fpId" to r.fpId,
-            "deeplinkId" to r.deeplinkId,
             "processedAt" to r.processedAt.toDouble(),
         )
+        // Optional keys are omitted, not null, to match the TS types (`fpId?: string`).
+        r.fpId?.let { m["fpId"] = it }
+        r.deeplinkId?.let { m["deeplinkId"] = it }
         r.deeplinkData?.let { m["deeplinkData"] = referrerDeeplink(it) }
         return m
     }

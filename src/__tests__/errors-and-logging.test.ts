@@ -4,6 +4,7 @@ import {
   loadSdk,
   MATCH_BODY,
   mockFetch,
+  outcome,
   silenceConsole,
 } from "./support/helpers";
 
@@ -32,7 +33,11 @@ describe("errors, retries, timeouts (JS fallback)", () => {
       "invalidResponse",
     ]);
     mockFetch({ init: { status: 401, body: { error: "Invalid API key" } } });
-    const e = await mod.default.initialize(KEY).catch((x: any) => x);
+    const { value, lastError: e } = await outcome(
+      mod.default,
+      mod.default.initialize(KEY)
+    );
+    expect(value).toBeNull();
     expect(e).toBeInstanceOf(Error);
     expect(e).toBeInstanceOf(mod.DLNError);
     expect(e.code).toBe("invalidApiKey");
@@ -48,9 +53,12 @@ describe("errors, retries, timeouts (JS fallback)", () => {
       flavor: "expo",
       native: { initializeWithConfig: async () => Promise.reject(err) },
     });
-    await expect(sdk.initialize(KEY)).rejects.toMatchObject({
-      code: "noCredits",
-      status: 403,
+    expect(await outcome(sdk, sdk.initialize(KEY))).toMatchObject({
+      value: null,
+      lastError: {
+        code: "noCredits",
+        status: 403,
+      },
     });
   });
 
@@ -77,7 +85,8 @@ describe("errors, retries, timeouts (JS fallback)", () => {
       const { sdk } = loadSdk({ flavor: "none" });
       await expect(
         sdk.initialize(KEY, { retryAttempts: 2 })
-      ).rejects.toBeDefined();
+      ).resolves.toBeNull();
+      expect(sdk.lastError).not.toBeNull();
       expect(fetchMock).toHaveBeenCalledTimes(1);
     }
   );
@@ -111,9 +120,11 @@ describe("errors, retries, timeouts (JS fallback)", () => {
     const { sdk } = loadSdk({ flavor: "none" });
     jest.useFakeTimers();
     const p = sdk.initialize(KEY, { timeoutMs: 1000, retryAttempts: 0 });
-    const assertion = expect(p).rejects.toMatchObject({ code: "network" });
     await jest.advanceTimersByTimeAsync(1001);
-    await assertion;
+    expect(await outcome(sdk, p)).toMatchObject({
+      value: null,
+      lastError: { code: "network" },
+    });
   });
 
   it("SDK-50: no unhandled rejection escapes when the caller ignores initialize's promise and later calls fail", async () => {
@@ -121,9 +132,13 @@ describe("errors, retries, timeouts (JS fallback)", () => {
     const { sdk } = loadSdk({ flavor: "none" });
     const unhandled = jest.fn();
     process.on("unhandledRejection", unhandled);
-    sdk.initialize(KEY, { retryAttempts: 0 }).catch(() => {});
-    await expect(sdk.checkDeferredDeepLink()).rejects.toMatchObject({
-      code: "notInitialized",
+    // SDK-85: no .catch needed; initialize never rejects.
+    sdk.initialize(KEY, { retryAttempts: 0 });
+    expect(await outcome(sdk, sdk.checkDeferredDeepLink())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "notInitialized",
+      },
     });
     await new Promise((r) => setTimeout(r, 10));
     process.off("unhandledRejection", unhandled);

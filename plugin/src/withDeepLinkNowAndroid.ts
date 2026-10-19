@@ -1,4 +1,4 @@
-import type { ConfigPlugin } from "@expo/config-plugins";
+import type { ConfigPlugin } from "expo/config-plugins";
 
 type IntentFilter = NonNullable<
   NonNullable<Parameters<ConfigPlugin>[0]["android"]>["intentFilters"]

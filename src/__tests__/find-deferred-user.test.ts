@@ -4,6 +4,7 @@ import {
   MATCH_BODY,
   mockFetch,
   omit,
+  outcome,
   silenceConsole,
   wireMatch,
 } from "./support/helpers";
@@ -46,7 +47,7 @@ describe("findDeferredUser", () => {
     }
   );
 
-  it("RN-03: a camelCase payload from native is rejected as invalidResponse, not passed through", async () => {
+  it("RN-03: a camelCase payload from native is reported as invalidResponse, not passed through", async () => {
     const { sdk } = loadSdk({
       flavor: "expo",
       native: {
@@ -57,8 +58,11 @@ describe("findDeferredUser", () => {
       },
     });
     await sdk.initialize(KEY);
-    await expect(sdk.findDeferredUser()).rejects.toMatchObject({
-      code: "invalidResponse",
+    expect(await outcome(sdk, sdk.findDeferredUser())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "invalidResponse",
+      },
     });
   });
 
@@ -114,12 +118,15 @@ describe("findDeferredUser", () => {
     ]);
   });
 
-  it("SDK-51: malformed /match body rejects invalidResponse", async () => {
+  it("SDK-51: malformed /match body resolves null with invalidResponse", async () => {
     mockFetch({ init: { body: INIT_BODY }, match: { body: { nope: true } } });
     const { sdk } = loadSdk({ flavor: "none" });
     await sdk.initialize(KEY);
-    await expect(sdk.findDeferredUser()).rejects.toMatchObject({
-      code: "invalidResponse",
+    expect(await outcome(sdk, sdk.findDeferredUser())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "invalidResponse",
+      },
     });
   });
 

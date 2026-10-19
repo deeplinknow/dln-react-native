@@ -1,4 +1,4 @@
-import { type ConfigPlugin, createRunOncePlugin } from "@expo/config-plugins";
+import { type ConfigPlugin, createRunOncePlugin } from "expo/config-plugins";
 
 import { type DeepLinkNowPluginProps, normalizeDomains } from "./domains";
 import { withDeepLinkNowAndroid } from "./withDeepLinkNowAndroid";

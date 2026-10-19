@@ -188,6 +188,9 @@ function maskKey(key: string): string {
   return key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "…";
 }
 
+/** The everyday entry points whose failures are recorded in `lastError` (SDK-85). */
+type FailureKind = "initialize" | "checkDeferredDeepLink" | "findDeferredUser";
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
@@ -196,10 +199,14 @@ class DeepLinkNow {
   private config = { ...DEFAULTS };
   private apiKey: string | null = null;
 
+  /** The internal init, which rejects on failure (used by `ensureInitialized`). */
   private initPromise: Promise<DLNAppInfo> | null = null;
+  /** What `initialize` hands back for `initPromise`: never rejects (SDK-85). */
+  private publicInitPromise: Promise<DLNAppInfo | null> | null = null;
   private initSignature: string | null = null;
   private appInfo: DLNAppInfo | null = null;
   private initError: DLNError | null = null;
+  private lastFailure: { kind: FailureKind; error: DLNError } | null = null;
 
   // JS fallback state (no native module)
   private fallbackDomains: Set<string> | null = null;
@@ -236,6 +243,33 @@ class DeepLinkNow {
   }
 
   // ============================================
+  // Errors (SDK-85)
+  // ============================================
+
+  /**
+   * The typed error (SDK-55) from the most recent failed `initialize`,
+   * `checkDeferredDeepLink` or `findDeferredUser`, or null. Those calls never reject: they
+   * resolve null on failure and record the error here. The next successful call of the same
+   * kind clears it.
+   */
+  get lastError(): DLNError | null {
+    return this.lastFailure?.error ?? null;
+  }
+
+  private recordFailure(kind: FailureKind, e: unknown): null {
+    const error = toDLNError(e);
+    this.lastFailure = { kind, error };
+    this.warn(`${kind} failed (${error.code}): ${error.message}`);
+    return null;
+  }
+
+  private recordSuccess(kind: FailureKind) {
+    if (this.lastFailure?.kind === kind) {
+      this.lastFailure = null;
+    }
+  }
+
+  // ============================================
   // Initialization
   // ============================================
 
@@ -243,15 +277,22 @@ class DeepLinkNow {
    * Validates the API key and loads the app's link domains. Makes exactly one `/init`
    * request (through the native SDK when it is linked).
    *
-   * Resolves with the app info, or rejects with a `DLNError` (`invalidApiKey`,
+   * Resolves with the app info, or with null on failure. It never rejects (SDK-85): the
+   * failure is logged as a warning and kept in `lastError` (`invalidApiKey`,
    * `accountInactive`, `noCredits`, `rateLimited`, `network`, `server`, `invalidResponse`).
    */
-  initialize(apiKey: string, config?: DeepLinkNowConfig): Promise<DLNAppInfo> {
+  initialize(
+    apiKey: string,
+    config?: DeepLinkNowConfig
+  ): Promise<DLNAppInfo | null> {
     if (!apiKey || typeof apiKey !== "string") {
-      return Promise.reject(
-        new DLNError(
-          "invalidApiKey",
-          "initialize() requires a non-empty API key"
+      return Promise.resolve(
+        this.recordFailure(
+          "initialize",
+          new DLNError(
+            "invalidApiKey",
+            "initialize() requires a non-empty API key"
+          )
         )
       );
     }
@@ -273,12 +314,13 @@ class DeepLinkNow {
     const signature = `${apiKey}\u0000${JSON.stringify(passed)}`;
     if (
       this.initPromise &&
+      this.publicInitPromise &&
       this.initSignature === signature &&
       !this.appInfo &&
       !this.initError
     ) {
       // SDK-07: share an identical in-flight request.
-      return this.initPromise;
+      return this.publicInitPromise;
     }
 
     this.config = { ...DEFAULTS, ...(passed as Partial<typeof DEFAULTS>) };
@@ -308,13 +350,29 @@ class DeepLinkNow {
           this.appInfo = null;
           this.initError = e;
         }
-        this.warn(`Initialization failed (${e.code}): ${e.message}`);
         throw e;
       }
     );
+    const publicPromise: Promise<DLNAppInfo | null> = p.then(
+      (info) => {
+        if (this.initPromise === p) {
+          this.recordSuccess("initialize");
+        }
+        return info;
+      },
+      (err: unknown) => {
+        if (this.initPromise === p) {
+          return this.recordFailure("initialize", err);
+        }
+        // Superseded by a newer initialize: warn, but don't overwrite its outcome.
+        this.warn(`Earlier initialize failed (${toDLNError(err).code})`);
+        return null;
+      }
+    );
     this.initPromise = p;
+    this.publicInitPromise = publicPromise;
     this.initSignature = signature;
-    return p;
+    return publicPromise;
   }
 
   /** Whether a successful initialization has completed. */
@@ -434,12 +492,24 @@ class DeepLinkNow {
   /**
    * The one call: runs the platform chain once per install and returns the deferred deep
    * link, or null when there is none. iOS: pasteboard → fingerprint. Android: install
-   * referrer → fingerprint. Rejects with a `DLNError` on failure (never confused with
-   * "no link").
+   * referrer → fingerprint. Never rejects (SDK-85): a failure (offline, invalid key, not
+   * initialized, …) also resolves null, is logged as a warning and is kept in `lastError`.
    */
   async checkDeferredDeepLink(
     // JS callers may pass null.
     options: DeferredDeepLinkOptions | null = {}
+  ): Promise<DeferredDeepLink | null> {
+    try {
+      const link = await this.runCheckDeferredDeepLink(options);
+      this.recordSuccess("checkDeferredDeepLink");
+      return link;
+    } catch (e) {
+      return this.recordFailure("checkDeferredDeepLink", e);
+    }
+  }
+
+  private async runCheckDeferredDeepLink(
+    options: DeferredDeepLinkOptions | null
   ): Promise<DeferredDeepLink | null> {
     await this.ensureInitialized();
 
@@ -462,9 +532,7 @@ class DeepLinkNow {
     try {
       res = await DeepLinkNowModule.checkDeferredDeepLink(opts);
     } catch (e) {
-      const err = toDLNError(e);
-      this.log(`checkDeferredDeepLink failed (${err.code})`);
-      throw err;
+      throw toDLNError(e);
     }
     if (res === null || res === undefined) {
       this.log("checkDeferredDeepLink: no deferred deep link");
@@ -568,9 +636,20 @@ class DeepLinkNow {
   /**
    * Low level: every fingerprint candidate from `/sdk/match`, in the server's snake_case
    * shape (`confidence_score`, `match_quality`, `match_details`, `deeplink.full_path`, …).
-   * Not filtered or reordered. Rejects with a `DLNError` on failure.
+   * Not filtered or reordered. Never rejects (SDK-85): a failure resolves null, is logged as
+   * a warning and is kept in `lastError`. No candidates is `{ matches: [] }`, not null.
    */
-  async findDeferredUser(): Promise<MatchResponse> {
+  async findDeferredUser(): Promise<MatchResponse | null> {
+    try {
+      const res = await this.runFindDeferredUser();
+      this.recordSuccess("findDeferredUser");
+      return res;
+    } catch (e) {
+      return this.recordFailure("findDeferredUser", e);
+    }
+  }
+
+  private async runFindDeferredUser(): Promise<MatchResponse> {
     await this.ensureInitialized();
     if (!DeepLinkNowModule) {
       return this.restMatch();

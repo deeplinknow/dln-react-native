@@ -7,6 +7,8 @@
  * @see https://github.com/react-native-community/cli/blob/main/docs/dependencies.md
  */
 
+const path = require("node:path");
+
 /**
  * Expo apps link this package as an Expo module (expo-module.config.json). Expo's
  * autolinking also reads this file, so in an Expo app the React Native CLI entries
@@ -24,8 +26,14 @@ function isExpoApp() {
   }
   try {
     const paths = [process.cwd()];
-    require.resolve("expo/package.json", { paths });
-    require.resolve("expo-modules-core/package.json", { paths });
+    const expoDir = path.dirname(
+      require.resolve("expo/package.json", { paths })
+    );
+    // Apps list `expo`, not `expo-modules-core` (Expo 54 templates). With an
+    // isolated linker (pnpm, Bun) it is only reachable from expo itself (RN-19).
+    require.resolve("expo-modules-core/package.json", {
+      paths: [...paths, expoDir],
+    });
     return true;
   } catch {
     return false;

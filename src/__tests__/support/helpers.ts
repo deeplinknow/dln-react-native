@@ -285,3 +285,16 @@ export function allLogText(spies: ReturnType<typeof silenceConsole>) {
     )
     .join("\n");
 }
+
+/**
+ * SDK-85: the everyday entry points never reject; a failure resolves null and leaves the
+ * typed error in `lastError`. Awaits `p` and returns both, for
+ * `expect(await outcome(sdk, p)).toMatchObject({ value: null, lastError: {...} })`.
+ */
+export async function outcome(
+  sdk: { lastError: unknown },
+  p: Promise<unknown>
+): Promise<{ value: unknown; lastError: any }> {
+  const value = await p;
+  return { value, lastError: sdk.lastError };
+}

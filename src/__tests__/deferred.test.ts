@@ -5,6 +5,7 @@ import {
   MATCH_BODY,
   mockFetch,
   omit,
+  outcome,
   silenceConsole,
   wireMatch,
 } from "./support/helpers";
@@ -93,7 +94,7 @@ describe("checkDeferredDeepLink (native)", () => {
     expect(native.checkDeferredDeepLink).toHaveBeenLastCalledWith({});
   });
 
-  it("SDK-10 / SDK-55: a native rejection surfaces as a DLNError with the same code", async () => {
+  it("SDK-10 / SDK-55 / SDK-85: a native rejection resolves null with a DLNError (same code) in lastError", async () => {
     const err = Object.assign(new Error("Too many"), {
       code: "rateLimited",
       userInfo: { status: 429 },
@@ -103,9 +104,15 @@ describe("checkDeferredDeepLink (native)", () => {
       native: { checkDeferredDeepLink: async () => Promise.reject(err) },
     });
     await sdk.initialize(KEY);
-    const p = sdk.checkDeferredDeepLink();
-    await expect(p).rejects.toBeInstanceOf(mod.DLNError);
-    await expect(p).rejects.toMatchObject({ code: "rateLimited", status: 429 });
+    expect(await outcome(sdk, sdk.checkDeferredDeepLink())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "rateLimited",
+        status: 429,
+        message: "Too many",
+      },
+    });
+    expect(sdk.lastError).toBeInstanceOf(mod.DLNError);
   });
 
   it("SDK-51: an unknown native error code maps to a known DLNError code", async () => {
@@ -115,11 +122,11 @@ describe("checkDeferredDeepLink (native)", () => {
       native: { checkDeferredDeepLink: async () => Promise.reject(err) },
     });
     await sdk.initialize(KEY);
-    const e = await sdk.checkDeferredDeepLink().catch((x: any) => x);
-    expect(mod.DLN_ERROR_CODES).toContain(e.code);
+    await expect(sdk.checkDeferredDeepLink()).resolves.toBeNull();
+    expect(mod.DLN_ERROR_CODES).toContain(sdk.lastError?.code);
   });
 
-  it("SDK-15: a native result that is not a DeferredDeepLink shape is rejected as invalidResponse", async () => {
+  it("SDK-15: a native result that is not a DeferredDeepLink shape is reported as invalidResponse", async () => {
     const { sdk } = loadSdk({
       flavor: "expo",
       native: {
@@ -127,8 +134,11 @@ describe("checkDeferredDeepLink (native)", () => {
       },
     });
     await sdk.initialize(KEY);
-    await expect(sdk.checkDeferredDeepLink()).rejects.toMatchObject({
-      code: "invalidResponse",
+    expect(await outcome(sdk, sdk.checkDeferredDeepLink())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "invalidResponse",
+      },
     });
   });
 
@@ -433,13 +443,16 @@ describe("checkDeferredDeepLink (JS fallback: fingerprint step only)", () => {
     expect(fetchMock.mock.calls.length).toBe(before);
   });
 
-  it("SDK-24 / SDK-54: errors (5xx, network) reject and do not set the flag", async () => {
+  it("SDK-24 / SDK-54: errors (5xx, network) resolve null with lastError and do not set the flag", async () => {
     const { sdk, fetchMock } = await setup([
       { status: 503, body: { error: "down" } },
       { body: MATCH_BODY },
     ]);
-    await expect(sdk.checkDeferredDeepLink()).rejects.toMatchObject({
-      code: "server",
+    expect(await outcome(sdk, sdk.checkDeferredDeepLink())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "server",
+      },
     });
     await expect(sdk.checkDeferredDeepLink()).resolves.toMatchObject({
       source: "fingerprint",

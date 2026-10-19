@@ -148,7 +148,8 @@ class DeepLinkNowModule(reactContext: ReactApplicationContext) :
         moduleScope.launch {
             try {
                 DLN.awaitInitialization()
-                promise.resolve(instanceOrNull()?.getReferrerData()?.let { DLNBridgeConverters.referrerData(it).toWritableMap() })
+                // RN-24: wait for the Install Referrer step, not just init (dln-android 1.2.0+).
+                promise.resolve(DLN.awaitReferrer()?.let { DLNBridgeConverters.referrerData(it).toWritableMap() })
             } catch (e: Exception) {
                 reject(promise, e)
             }

@@ -5,6 +5,7 @@ import {
   loadSdk,
   MATCH_BODY,
   mockFetch,
+  outcome,
   silenceConsole,
 } from "./support/helpers";
 
@@ -47,7 +48,7 @@ describe("initialize (native module present)", () => {
     });
   });
 
-  it("RN-07 / SDK-04: initialize rejects with a DLNError when native init fails", async () => {
+  it("RN-07 / SDK-04 / SDK-85: a failed native init resolves null with the DLNError in lastError", async () => {
     const nativeErr = Object.assign(new Error("Invalid API key"), {
       code: "invalidApiKey",
       userInfo: { status: 401 },
@@ -56,12 +57,15 @@ describe("initialize (native module present)", () => {
       flavor: "expo",
       native: { initializeWithConfig: async () => Promise.reject(nativeErr) },
     });
-    const p = sdk.initialize(KEY);
-    await expect(p).rejects.toBeInstanceOf(mod.DLNError);
-    await expect(p).rejects.toMatchObject({
-      code: "invalidApiKey",
-      status: 401,
+    expect(await outcome(sdk, sdk.initialize(KEY))).toMatchObject({
+      value: null,
+      lastError: {
+        code: "invalidApiKey",
+        status: 401,
+        message: "Invalid API key",
+      },
     });
+    expect(sdk.lastError).toBeInstanceOf(mod.DLNError);
     expect(sdk.isInitialized()).toBe(false);
   });
 
@@ -89,13 +93,20 @@ describe("initialize (native module present)", () => {
     expect(done).toBe(true);
   });
 
-  it("RN-07: an invalid API key argument rejects with a DLNError instead of resolving", async () => {
+  it("RN-07: an invalid API key argument resolves null with invalidApiKey in lastError (SDK-85)", async () => {
     const { sdk } = loadSdk({ flavor: "expo" });
-    await expect(sdk.initialize("")).rejects.toMatchObject({
-      code: "invalidApiKey",
+    expect(await outcome(sdk, sdk.initialize(""))).toMatchObject({
+      value: null,
+      lastError: {
+        code: "invalidApiKey",
+        message: "initialize() requires a non-empty API key",
+      },
     });
-    await expect(sdk.initialize(undefined as any)).rejects.toMatchObject({
-      code: "invalidApiKey",
+    expect(await outcome(sdk, sdk.initialize(undefined as any))).toMatchObject({
+      value: null,
+      lastError: {
+        code: "invalidApiKey",
+      },
     });
   });
 
@@ -193,7 +204,7 @@ describe("initialize (native module present)", () => {
     expect(order).toEqual(["init", "check"]);
   });
 
-  it("SDK-04: after a failed init, checkDeferredDeepLink and findDeferredUser reject notInitialized with the init failure as cause", async () => {
+  it("SDK-04: after a failed init, checkDeferredDeepLink and findDeferredUser resolve null with notInitialized (and the init failure as cause) in lastError", async () => {
     const nativeErr = Object.assign(new Error("Account is not active"), {
       code: "accountInactive",
     });
@@ -201,26 +212,41 @@ describe("initialize (native module present)", () => {
       flavor: "expo",
       native: { initializeWithConfig: async () => Promise.reject(nativeErr) },
     });
-    await expect(sdk.initialize(KEY)).rejects.toMatchObject({
-      code: "accountInactive",
+    expect(await outcome(sdk, sdk.initialize(KEY))).toMatchObject({
+      value: null,
+      lastError: {
+        code: "accountInactive",
+      },
     });
-    await expect(sdk.checkDeferredDeepLink()).rejects.toMatchObject({
-      code: "notInitialized",
-      cause: expect.objectContaining({ code: "accountInactive" }),
+    expect(await outcome(sdk, sdk.checkDeferredDeepLink())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "notInitialized",
+        cause: expect.objectContaining({ code: "accountInactive" }),
+      },
     });
-    await expect(sdk.findDeferredUser()).rejects.toMatchObject({
-      code: "notInitialized",
+    expect(await outcome(sdk, sdk.findDeferredUser())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "notInitialized",
+      },
     });
     expect(native.checkDeferredDeepLink).not.toHaveBeenCalled();
   });
 
-  it("SDK-04: before any initialize, checkDeferredDeepLink rejects notInitialized (not null)", async () => {
+  it("SDK-04: before any initialize, checkDeferredDeepLink reports notInitialized in lastError", async () => {
     const { sdk } = loadSdk({ flavor: "expo" });
-    await expect(sdk.checkDeferredDeepLink()).rejects.toMatchObject({
-      code: "notInitialized",
+    expect(await outcome(sdk, sdk.checkDeferredDeepLink())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "notInitialized",
+      },
     });
-    await expect(sdk.findDeferredUser()).rejects.toMatchObject({
-      code: "notInitialized",
+    expect(await outcome(sdk, sdk.findDeferredUser())).toMatchObject({
+      value: null,
+      lastError: {
+        code: "notInitialized",
+      },
     });
   });
 });
@@ -256,9 +282,9 @@ describe("initialize (JS REST fallback, no native module)", () => {
   it("SDK-64: a non-HTTPS baseUrl is refused unless it is localhost/127.0.0.1/10.0.2.2", async () => {
     const fetchMock = mockFetch({ init: { body: INIT_BODY } });
     const { sdk } = loadSdk({ flavor: "none" });
-    await expect(
-      sdk.initialize(KEY, { baseUrl: "http://example.com" })
-    ).rejects.toMatchObject({ code: "badRequest" });
+    expect(
+      await outcome(sdk, sdk.initialize(KEY, { baseUrl: "http://example.com" }))
+    ).toMatchObject({ value: null, lastError: { code: "badRequest" } });
     expect(fetchMock).not.toHaveBeenCalled();
     await sdk.initialize(KEY, { baseUrl: "http://localhost:3000" });
     expect(fetchMock.mock.calls[0][0]).toBe(
@@ -308,38 +334,50 @@ describe("initialize (JS REST fallback, no native module)", () => {
   ])("SDK-04 / SDK-55: HTTP %s maps to %j → %s", async (status, body, code) => {
     mockFetch({ init: { status, body } });
     const { sdk } = loadSdk({ flavor: "none" });
-    await expect(
-      sdk.initialize(KEY, { retryAttempts: 0 })
-    ).rejects.toMatchObject({
-      code,
-      status,
+    expect(
+      await outcome(sdk, sdk.initialize(KEY, { retryAttempts: 0 }))
+    ).toMatchObject({
+      value: null,
+      lastError: {
+        code,
+        status,
+      },
     });
     expect(sdk.isInitialized()).toBe(false);
   });
 
-  it("SDK-51: an unparseable 2xx (captive portal HTML) rejects invalidResponse", async () => {
+  it("SDK-51: an unparseable 2xx (captive portal HTML) resolves null with invalidResponse", async () => {
     mockFetch({ init: { status: 200, raw: "<html>Login to Wi-Fi</html>" } });
     const { sdk } = loadSdk({ flavor: "none" });
-    await expect(sdk.initialize(KEY)).rejects.toMatchObject({
-      code: "invalidResponse",
+    expect(await outcome(sdk, sdk.initialize(KEY))).toMatchObject({
+      value: null,
+      lastError: {
+        code: "invalidResponse",
+      },
     });
   });
 
-  it("SDK-51: a 2xx missing app.alias rejects invalidResponse", async () => {
+  it("SDK-51: a 2xx missing app.alias resolves null with invalidResponse", async () => {
     mockFetch({ init: { status: 200, body: { app: { id: "x" } } } });
     const { sdk } = loadSdk({ flavor: "none" });
-    await expect(sdk.initialize(KEY)).rejects.toMatchObject({
-      code: "invalidResponse",
+    expect(await outcome(sdk, sdk.initialize(KEY))).toMatchObject({
+      value: null,
+      lastError: {
+        code: "invalidResponse",
+      },
     });
   });
 
   it("SDK-54: offline fails fast with network", async () => {
     mockFetch({ init: new TypeError("Network request failed") });
     const { sdk } = loadSdk({ flavor: "none" });
-    await expect(
-      sdk.initialize(KEY, { retryAttempts: 0 })
-    ).rejects.toMatchObject({
-      code: "network",
+    expect(
+      await outcome(sdk, sdk.initialize(KEY, { retryAttempts: 0 }))
+    ).toMatchObject({
+      value: null,
+      lastError: {
+        code: "network",
+      },
     });
   });
 

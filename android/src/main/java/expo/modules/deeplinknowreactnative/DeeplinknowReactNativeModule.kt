@@ -86,7 +86,8 @@ class DeeplinknowReactNativeModule : Module() {
 
     AsyncFunction("getReferrerData") Coroutine { ->
       DLN.awaitInitialization()
-      instanceOrNull()?.getReferrerData()?.let { DLNBridgeConverters.referrerData(it) }
+      // RN-24: wait for the Install Referrer step, not just init (dln-android 1.2.0+).
+      DLN.awaitReferrer()?.let { DLNBridgeConverters.referrerData(it) }
     }
 
     // MARK: - Clipboard
@@ -129,7 +130,8 @@ class DeeplinknowReactNativeModule : Module() {
     /** Arguments are ignored (RN-08): the SDK is initialized once, by initialize. */
     AsyncFunction("processInstallReferrer") Coroutine { _: String, _: Boolean ->
       DLN.awaitInitialization()
-      instanceOrNull()?.getReferrerData()?.let { DLNBridgeConverters.referrerData(it) }
+      // RN-24: wait for the Install Referrer step, not just init (dln-android 1.2.0+).
+      DLN.awaitReferrer()?.let { DLNBridgeConverters.referrerData(it) }
     }
 
     Function("getCachedReferrerData") {
