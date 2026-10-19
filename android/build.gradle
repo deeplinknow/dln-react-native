@@ -1,47 +1,140 @@
-apply plugin: 'com.android.library'
+import groovy.json.JsonSlurper
 
-group = 'expo.modules.deeplinknowreactnative'
-version = '0.1.0'
+// ============================================
+// Native SDK version (single source of truth: package.json "deeplinknow", RN-05)
+// ============================================
 
-def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
-apply from: expoModulesCorePlugin
-applyKotlinExpoModulesCorePlugin()
-useCoreDependencies()
-useExpoPublishing()
+def dlnPackageJson = new JsonSlurper().parse(file("../package.json"))
+def dlnAndroidVersion = dlnPackageJson.deeplinknow.androidSdkVersion
 
-// If you want to use the managed Android SDK versions from expo-modules-core, set this to true.
-// The Android SDK versions will be bumped from time to time in SDK releases and may introduce breaking changes in your module code.
-// Most of the time, you may like to manage the Android SDK versions yourself.
-def useManagedAndroidSdkVersions = false
-if (useManagedAndroidSdkVersions) {
-  useDefaultAndroidSdkVersions()
-} else {
-  buildscript {
-    // Simple helper that allows the root project to override versions declared by this library.
-    ext.safeExtGet = { prop, fallback ->
-      rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
-    }
-  }
-  project.android {
-    compileSdkVersion safeExtGet("compileSdkVersion", 36)
-    defaultConfig {
-      minSdkVersion safeExtGet("minSdkVersion", 24)
-      targetSdkVersion safeExtGet("targetSdkVersion", 36)
-    }
-  }
+def safeExtGet(prop, fallback) {
+    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
 }
+
+// ============================================
+// Build Configuration Detection
+// ============================================
+
+// Expo project if the app includes :expo-modules-core (override with USE_EXPO_MODULES=0/1)
+def hasExpoModules = false
+try {
+    hasExpoModules = project.findProject(':expo-modules-core') != null
+} catch (Exception e) {
+    hasExpoModules = false
+}
+def useExpoModulesEnv = System.getenv('USE_EXPO_MODULES')
+def useExpoModules = hasExpoModules && (useExpoModulesEnv != '0')
+if (useExpoModulesEnv == '1') {
+    useExpoModules = true
+}
+
+def isNewArchEnabled = (project.hasProperty("newArchEnabled") && project.property("newArchEnabled") == "true") ||
+                       (rootProject.hasProperty("newArchEnabled") && rootProject.property("newArchEnabled") == "true")
+def useTurboModule = !useExpoModules && isNewArchEnabled
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+if (useTurboModule) {
+    // Runs codegen for src/specs/NativeDeepLinkNow.ts → NativeDeepLinkNowSpec (RN-21)
+    apply plugin: 'com.facebook.react'
+}
+
+println "[DeeplinknowReactNative] Build configuration:"
+println "  - Use Expo Modules: ${useExpoModules}"
+println "  - New Architecture Enabled: ${isNewArchEnabled}"
+println "  - dln-android: ${dlnAndroidVersion}"
+
+// ============================================
+// Expo Modules Setup (if applicable)
+// ============================================
+
+if (useExpoModules) {
+    def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+    if (expoModulesCorePlugin.exists()) {
+        apply from: expoModulesCorePlugin
+        applyKotlinExpoModulesCorePlugin()
+        useCoreDependencies()
+        useExpoPublishing()
+    }
+}
+
+if (useTurboModule) {
+    react {
+        jsRootDir = file("../src/")
+        libraryName = "NativeDeepLinkNowSpec"
+        codegenJavaPackageName = "com.deeplinknow.reactnative"
+    }
+}
+
+// ============================================
+// Android Configuration
+// ============================================
 
 android {
-  namespace "expo.modules.deeplinknowreactnative"
-  defaultConfig {
-    versionCode 1
-    versionName "0.1.0"
-  }
-  lintOptions {
-    abortOnError false
-  }
+    if (useExpoModules) {
+        namespace "expo.modules.deeplinknowreactnative"
+    } else {
+        namespace "com.deeplinknow.reactnative"
+    }
+
+    compileSdkVersion safeExtGet("compileSdkVersion", 35)
+
+    defaultConfig {
+        minSdkVersion safeExtGet("minSdkVersion", 24)
+        targetSdkVersion safeExtGet("targetSdkVersion", 35)
+        versionCode 1
+        versionName dlnPackageJson.version
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+
+    // Source sets per flavor. src/shared holds the result converters used by every flavor.
+    sourceSets {
+        main {
+            if (useExpoModules) {
+                java.srcDirs = ['src/main/java', 'src/shared/java']
+            } else if (isNewArchEnabled) {
+                java.srcDirs = [
+                    'src/newarch/java',
+                    'src/shared/java',
+                    "${project.buildDir}/generated/source/codegen/java"
+                ]
+            } else {
+                java.srcDirs = ['src/oldarch/java', 'src/shared/java']
+            }
+        }
+    }
+
+    if (useTurboModule) {
+        buildFeatures {
+            buildConfig true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
 }
 
+// ============================================
+// Dependencies
+// ============================================
+
 dependencies {
-  implementation 'com.deeplinknow:dln-android:1.0.18'
+    // DeepLinkNow native Android SDK (always required)
+    implementation "com.deeplinknow:dln-android:${dlnAndroidVersion}"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+
+    if (!useExpoModules) {
+        // React Native dependencies for non-Expo projects
+        implementation "com.facebook.react:react-android"
+    }
 }

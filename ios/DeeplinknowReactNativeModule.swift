@@ -2,133 +2,124 @@ import ExpoModulesCore
 import DeepLinkNow
 import UIKit
 
+/// Rejects a promise with one of the shared SDK error codes (`invalidApiKey`, `network`, …).
+final class DeepLinkNowBridgeException: Exception {
+  private let dlnCode: String
+  private let dlnReason: String
+
+  init(_ error: DeepLinkNowCore.BridgeError) {
+    self.dlnCode = error.code
+    self.dlnReason = error.message
+    super.init()
+  }
+
+  override var code: String { dlnCode }
+  override var reason: String { dlnReason }
+}
+
+/// Expo Modules flavor. Same method set and shapes as DeepLinkNowTurbo.mm (RN-02, RN-03);
+/// all conversion lives in DeepLinkNowCore.
 public class DeeplinknowReactNativeModule: Module {
-  // Module definition with name and methods
+  private let core = DeepLinkNowCore.shared
+
   public func definition() -> ModuleDefinition {
     Name("DeepLinkNow")
 
     // MARK: - Initialization
 
-    AsyncFunction("initialize") { (apiKey: String, enableLogs: Bool) -> Bool in
-      let config = DLNConfig(apiKey: apiKey, enableLogs: enableLogs)
-      await DeepLinkNow.initialize(config: config)
-      return true
+    /// Legacy 1.1 entry point.
+    AsyncFunction("initialize") { (apiKey: String, enableLogs: Bool) async -> Bool in
+      await DeepLinkNow.initialize(config: DLNConfig(apiKey: apiKey, enableLogs: enableLogs))
+      return DeepLinkNow.isInitialized
+    }
+
+    AsyncFunction("initializeWithConfig") { (apiKey: String, config: [String: Any]) async throws -> [String: Any] in
+      do {
+        return try await self.core.initialize(apiKey: apiKey, config: config)
+      } catch {
+        throw DeepLinkNowBridgeException(DeepLinkNowCore.bridgeError(error))
+      }
+    }
+
+    Function("isInitialized") { () -> Bool in
+      self.core.isInitialized()
     }
 
     // MARK: - Deferred Deep Linking
 
-    AsyncFunction("findDeferredUser") { () -> [String: Any]? in
-      guard let matchResponse = await DeepLinkNow.findDeferredUser() else {
-        return nil
-      }
-      return convertMatchResponseToDict(matchResponse)
-    }
-
-    // MARK: - Clipboard Methods
-
-    Function("checkClipboard") { () -> String? in
-      return DeepLinkNow.checkClipboard()
-    }
-
-    Function("hasDeepLinkToken") { () -> Bool in
-      return DeepLinkNow.hasDeepLinkToken()
-    }
-
-    // MARK: - Deep Link Parsing
-
-    Function("parseDeepLink") { (urlString: String) -> [String: Any]? in
-      guard let url = URL(string: urlString),
-            let parsed = DeepLinkNow.parseDeepLink(url) else {
-        return nil
-      }
-
-      return [
-        "path": parsed.path,
-        "parameters": parsed.parameters
-      ]
-    }
-
-    // MARK: - Native Clipboard (for compatibility)
-
-    AsyncFunction("getClipboardString") { () -> String? in
-      await MainActor.run {
-        return UIPasteboard.general.string
+    AsyncFunction("checkDeferredDeepLink") { (options: [String: Any]) async throws -> [String: Any]? in
+      do {
+        return try await self.core.checkDeferredDeepLink(options: options)
+      } catch {
+        throw DeepLinkNowBridgeException(DeepLinkNowCore.bridgeError(error))
       }
     }
 
-    AsyncFunction("setClipboardString") { (content: String) -> Bool in
-      await MainActor.run {
-        UIPasteboard.general.string = content
-        return true
+    AsyncFunction("resetDeferredDeepLink") { () -> Bool in
+      self.core.resetDeferredDeepLink()
+    }
+
+    AsyncFunction("findDeferredUser") { () async throws -> [String: Any] in
+      do {
+        return try await self.core.findDeferredUser()
+      } catch {
+        throw DeepLinkNowBridgeException(DeepLinkNowCore.bridgeError(error))
       }
+    }
+
+    /// Install referrer is Android-only.
+    AsyncFunction("getReferrerData") { () -> [String: Any]? in
+      nil
+    }
+
+    // MARK: - Clipboard
+
+    AsyncFunction("checkClipboard") { () async -> String? in
+      await self.core.checkClipboard()
+    }
+
+    AsyncFunction("hasDeepLinkToken") { () async -> Bool in
+      await self.core.hasDeepLinkToken()
+    }
+
+    AsyncFunction("getClipboardString") { () async -> String? in
+      await MainActor.run { self.core.getClipboardString() }
+    }
+
+    AsyncFunction("setClipboardString") { (content: String) async -> Bool in
+      await MainActor.run { self.core.setClipboardString(content) }
     }
 
     Function("hasClipboardString") { () -> Bool in
-      return UIPasteboard.general.hasStrings
-    }
-  }
-
-  // MARK: - Helper Methods
-
-  private func convertMatchResponseToDict(_ matchResponse: MatchResponse) -> [String: Any] {
-    var result: [String: Any] = [
-      "ttlSeconds": matchResponse.ttlSeconds,
-      "matches": []
-    ]
-
-    var matchesArray: [[String: Any]] = []
-
-    for match in matchResponse.matches {
-      var matchDict: [String: Any] = [
-        "confidenceScore": match.confidenceScore
-      ]
-
-      if let deeplink = match.deeplink {
-        matchDict["deeplink"] = [
-          "id": deeplink.id,
-          "targetUrl": deeplink.targetUrl,
-          "campaignId": deeplink.campaignId ?? NSNull(),
-          "matchedAt": deeplink.matchedAt,
-          "expiresAt": deeplink.expiresAt,
-          "metadata": deeplink.metadata.mapValues { $0.value }
-        ]
-      }
-
-      // Convert match details
-      let matchDetails = match.matchDetails
-      matchDict["matchDetails"] = [
-        "ipMatch": [
-          "matched": matchDetails.ipMatch.matched,
-          "score": matchDetails.ipMatch.score
-        ],
-        "deviceMatch": [
-          "matched": matchDetails.deviceMatch.matched,
-          "score": matchDetails.deviceMatch.score,
-          "components": [
-            "platform": matchDetails.deviceMatch.components.platform,
-            "osVersion": matchDetails.deviceMatch.components.osVersion,
-            "deviceModel": matchDetails.deviceMatch.components.deviceModel,
-            "hardwareFingerprint": matchDetails.deviceMatch.components.hardwareFingerprint
-          ]
-        ],
-        "timeProximity": [
-          "score": matchDetails.timeProximity.score,
-          "timeDifferenceMinutes": matchDetails.timeProximity.timeDifferenceMinutes
-        ],
-        "localeMatch": [
-          "matched": matchDetails.localeMatch.matched,
-          "score": matchDetails.localeMatch.score,
-          "components": [
-            "language": matchDetails.localeMatch.components.language,
-            "timezone": matchDetails.localeMatch.components.timezone
-          ]
-        ]
-      ]
-
-      matchesArray.append(matchDict)
+      self.core.hasClipboardString()
     }
 
-    result["matches"] = matchesArray
-    return result
+    // MARK: - Parsing
+
+    Function("parseDeepLink") { (url: String) -> [String: Any]? in
+      self.core.parseDeepLink(url)
+    }
+
+    Function("isValidDomain") { (host: String) -> Bool in
+      self.core.isValidDomain(host)
+    }
+
+    // MARK: - Legacy Android-only methods (null / false on iOS)
+
+    AsyncFunction("processInstallReferrer") { (_: String, _: Bool) -> [String: Any]? in
+      nil
+    }
+
+    Function("getCachedReferrerData") { () -> [String: Any]? in
+      nil
+    }
+
+    Function("clearReferrerCache") { () -> Bool in
+      false
+    }
+
+    Function("getDeferredDeepLink") { () -> [String: Any]? in
+      nil
+    }
   }
 }

@@ -20,7 +20,32 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "dln-example.deeplinknow.com"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "go.example.com"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
+      "package": "com.jvgpreve.dlnexample"
     },
     "web": {
       "output": "static",
@@ -39,7 +64,14 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      [
+        "@deeplinknow/react-native",
+        {
+          "domains": ["dln-example.deeplinknow.com", "go.example.com"]
+        }
+      ],
+      "./plugins/withLocalDeepLinkNowSdks"
     ],
     "experiments": {
       "typedRoutes": true,

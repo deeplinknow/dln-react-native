@@ -4,215 +4,145 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import com.deeplinknow.DLN
-import com.deeplinknow.DeeplinkMatch
-import com.deeplinknow.MatchResponse
-import com.deeplinknow.ReferrerData
+import com.deeplinknow.DLNConfig
+import com.deeplinknow.reactnative.DLNBridgeConverters
+import expo.modules.kotlin.exception.CodedException
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 
+/**
+ * Expo Modules flavor. Same method set and result shapes as the TurboModule / bridge
+ * modules (RN-02, RN-03); conversion lives in DLNBridgeConverters. Every SDK `suspend`
+ * call runs inside `AsyncFunction(...) Coroutine { }` (RN-18).
+ */
 class DeeplinknowReactNativeModule : Module() {
-  private val moduleScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+  private val context: Context
+    get() = appContext.reactContext ?: throw CodedException("notInitialized", "React context is not available", null)
+
+  private fun reject(t: Throwable?): Nothing {
+    val e = DLNBridgeConverters.error(t)
+    throw CodedException(e.code, e.message, t)
+  }
+
+  private fun instanceOrNull(): DLN? = try {
+    DLN.getInstance()
+  } catch (e: Exception) {
+    null
+  }
+
+  private fun clipboard(): ClipboardManager? =
+    context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
 
   override fun definition() = ModuleDefinition {
     Name("DeepLinkNow")
 
     // MARK: - Initialization
 
-    AsyncFunction("initialize") { apiKey: String, enableLogs: Boolean ->
+    /** Legacy 1.1 entry point: resolves whether init succeeded. */
+    AsyncFunction("initialize") Coroutine { apiKey: String, enableLogs: Boolean ->
+      DLN.init(context = context, apiKey = apiKey, enableLogs = enableLogs)
+      DLN.awaitInitialization().isSuccess
+    }
+
+    AsyncFunction("initializeWithConfig") Coroutine { apiKey: String, config: Map<String, Any?> ->
       DLN.init(
-        context = appContext.reactContext!!,
+        context = context,
         apiKey = apiKey,
-        enableLogs = enableLogs
+        enableLogs = config["enableLogs"] as? Boolean ?: false,
+        baseUrl = config["baseUrl"] as? String ?: DLNConfig.DEFAULT_BASE_URL,
+        timeoutMs = (config["timeoutMs"] as? Number)?.toLong() ?: DLNConfig.DEFAULT_TIMEOUT_MS,
+        retryAttempts = (config["retryAttempts"] as? Number)?.toInt() ?: DLNConfig.DEFAULT_RETRY_ATTEMPTS,
       )
-      return@AsyncFunction true
+      val result = DLN.awaitInitialization()
+      result.getOrNull()?.let { DLNBridgeConverters.appInfo(it) } ?: reject(result.exceptionOrNull())
+    }
+
+    Function("isInitialized") {
+      DLN.isInitialized
     }
 
     // MARK: - Deferred Deep Linking
 
-    AsyncFunction("findDeferredUser") {
-      val instance = DLN.getInstance()
-      val matchResponse = instance.findDeferredUser()
-
-      return@AsyncFunction matchResponse?.let { convertMatchResponseToMap(it) }
+    AsyncFunction("checkDeferredDeepLink") Coroutine { options: Map<String, Any?> ->
+      val result = DLN.checkDeferredDeepLink(
+        minConfidence = (options["minConfidence"] as? Number)?.toDouble(),
+        force = options["force"] as? Boolean ?: false,
+      )
+      if (result.isFailure) reject(result.exceptionOrNull())
+      result.getOrNull()?.let { DLNBridgeConverters.deferred(it) }
     }
 
-    AsyncFunction("processInstallReferrer") { apiKey: String, enableLogs: Boolean ->
-      // Initialize if not already done
-      if (!isDLNInitialized()) {
-        DLN.init(
-          context = appContext.reactContext!!,
-          apiKey = apiKey,
-          enableLogs = enableLogs
-        )
-        kotlinx.coroutines.delay(100)
-      }
-
-      val instance = DLN.getInstance()
-      val referrerData = instance.getReferrerData()
-
-      return@AsyncFunction referrerData?.let { convertReferrerDataToMap(it) }
+    AsyncFunction("resetDeferredDeepLink") Coroutine { ->
+      DLN.resetDeferredDeepLink()
+      true
     }
 
-    Function("getCachedReferrerData") {
-      val instance = DLN.getInstance()
-      val referrerData = instance.getReferrerData()
-
-      return@Function referrerData?.let { convertReferrerDataToMap(it) }
+    AsyncFunction("findDeferredUser") Coroutine { ->
+      val result = DLN.findDeferredUserResult()
+      result.getOrNull()?.let { DLNBridgeConverters.matchResponse(it) } ?: reject(result.exceptionOrNull())
     }
 
-    Function("clearReferrerCache") {
-      val sharedPreferences = appContext.reactContext!!.getSharedPreferences("dln_referrer", Context.MODE_PRIVATE)
-      sharedPreferences.edit().clear().apply()
-      return@Function true
+    AsyncFunction("getReferrerData") Coroutine { ->
+      DLN.awaitInitialization()
+      instanceOrNull()?.getReferrerData()?.let { DLNBridgeConverters.referrerData(it) }
     }
 
-    // MARK: - Clipboard Methods
+    // MARK: - Clipboard
 
-    AsyncFunction("checkClipboard") {
-      val instance = DLN.getInstance()
-      return@AsyncFunction instance.checkClipboard()
+    AsyncFunction("checkClipboard") Coroutine { ->
+      instanceOrNull()?.checkClipboard()
     }
 
-    AsyncFunction("hasDeepLinkToken") {
-      val instance = DLN.getInstance()
-      return@AsyncFunction instance.hasDeepLinkToken()
+    AsyncFunction("hasDeepLinkToken") Coroutine { ->
+      instanceOrNull()?.hasDeepLinkToken() ?: false
     }
 
-    // MARK: - Deep Link Parsing
-
-    Function("parseDeepLink") { url: String ->
-      val instance = DLN.getInstance()
-      val parsed = instance.parseDeepLink(url)
-
-      return@Function parsed?.let {
-        mapOf(
-          "path" to it.first,
-          "parameters" to it.second
-        )
-      }
+    AsyncFunction("getClipboardString") Coroutine { ->
+      val clip = clipboard()?.primaryClip
+      if (clip != null && clip.itemCount > 0) clip.getItemAt(0).text?.toString() else null
     }
 
-    Function("getDeferredDeepLink") {
-      val instance = DLN.getInstance()
-      val deeplinkMatch = instance.getDeferredDeepLink()
-
-      return@Function deeplinkMatch?.let { convertDeeplinkMatchToMap(it) }
-    }
-
-    // MARK: - Native Clipboard (for compatibility)
-
-    Function("getClipboardString") {
-      val clipboardManager = appContext.reactContext!!.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-      val clipData = clipboardManager.primaryClip
-
-      if (clipData != null && clipData.itemCount > 0) {
-        val clipItem = clipData.getItemAt(0)
-        return@Function clipItem.text?.toString()
-      }
-      return@Function null
-    }
-
-    Function("setClipboardString") { content: String ->
-      val clipboardManager = appContext.reactContext!!.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-      val clipData = ClipData.newPlainText("text", content)
-      clipboardManager.setPrimaryClip(clipData)
-      return@Function true
+    AsyncFunction("setClipboardString") Coroutine { content: String ->
+      clipboard()?.setPrimaryClip(ClipData.newPlainText("text", content))
+      true
     }
 
     Function("hasClipboardString") {
-      val clipboardManager = appContext.reactContext!!.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-      val hasText = clipboardManager.hasPrimaryClip() &&
-                   clipboardManager.primaryClipDescription?.hasMimeType("text/plain") == true
-      return@Function hasText
+      val cm = clipboard()
+      cm != null && cm.hasPrimaryClip() && cm.primaryClipDescription?.hasMimeType("text/plain") == true
     }
-  }
 
-  // MARK: - Helper Methods
+    // MARK: - Parsing
 
-  private fun isDLNInitialized(): Boolean {
-    return try {
-      DLN.getInstance()
+    Function("parseDeepLink") { url: String ->
+      DLN.parseDeepLink(url)?.let { DLNBridgeConverters.parsed(it) }
+    }
+
+    Function("isValidDomain") { host: String ->
+      DLN.isValidDomain(host)
+    }
+
+    // MARK: - Legacy 1.1 referrer methods
+
+    /** Arguments are ignored (RN-08): the SDK is initialized once, by initialize. */
+    AsyncFunction("processInstallReferrer") Coroutine { _: String, _: Boolean ->
+      DLN.awaitInitialization()
+      instanceOrNull()?.getReferrerData()?.let { DLNBridgeConverters.referrerData(it) }
+    }
+
+    Function("getCachedReferrerData") {
+      instanceOrNull()?.getReferrerData()?.let { DLNBridgeConverters.referrerData(it) }
+    }
+
+    Function("clearReferrerCache") {
+      DLN.resetDeferredDeepLink()
       true
-    } catch (e: Exception) {
-      false
-    }
-  }
-
-  private fun convertReferrerDataToMap(referrerData: ReferrerData): Map<String, Any?> {
-    val map = mutableMapOf<String, Any?>(
-      "referrerString" to referrerData.referrerString,
-      "fpId" to referrerData.fpId,
-      "deeplinkId" to referrerData.deeplinkId,
-      "processedAt" to referrerData.processedAt.toDouble()
-    )
-
-    if (referrerData.deeplinkData != null) {
-      map["deeplinkData"] = convertDeeplinkMatchToMap(referrerData.deeplinkData)
     }
 
-    return map
-  }
-
-  private fun convertDeeplinkMatchToMap(deeplinkMatch: DeeplinkMatch): Map<String, Any?> {
-    return mapOf(
-      "id" to deeplinkMatch.id,
-      "targetUrl" to deeplinkMatch.targetUrl,
-      "campaignId" to deeplinkMatch.campaignId,
-      "matchedAt" to deeplinkMatch.matchedAt,
-      "expiresAt" to deeplinkMatch.expiresAt,
-      "metadata" to deeplinkMatch.metadata
-    )
-  }
-
-  private fun convertMatchResponseToMap(matchResponse: MatchResponse): Map<String, Any> {
-    val matches = matchResponse.matches.map { match ->
-      val matchMap = mutableMapOf<String, Any?>(
-        "confidenceScore" to match.confidenceScore
-      )
-
-      if (match.deeplink != null) {
-        matchMap["deeplink"] = convertDeeplinkMatchToMap(match.deeplink)
-      }
-
-      // Convert match details
-      matchMap["matchDetails"] = mapOf(
-        "ipMatch" to mapOf(
-          "matched" to match.matchDetails.ipMatch.matched,
-          "score" to match.matchDetails.ipMatch.score
-        ),
-        "deviceMatch" to mapOf(
-          "matched" to match.matchDetails.deviceMatch.matched,
-          "score" to match.matchDetails.deviceMatch.score,
-          "components" to mapOf(
-            "platform" to match.matchDetails.deviceMatch.components.platform,
-            "osVersion" to match.matchDetails.deviceMatch.components.osVersion,
-            "deviceModel" to match.matchDetails.deviceMatch.components.deviceModel,
-            "hardwareFingerprint" to match.matchDetails.deviceMatch.components.hardwareFingerprint
-          )
-        ),
-        "timeProximity" to mapOf(
-          "score" to match.matchDetails.timeProximity.score,
-          "timeDifferenceMinutes" to match.matchDetails.timeProximity.timeDifferenceMinutes
-        ),
-        "localeMatch" to mapOf(
-          "matched" to match.matchDetails.localeMatch.matched,
-          "score" to match.matchDetails.localeMatch.score,
-          "components" to mapOf(
-            "language" to match.matchDetails.localeMatch.components.language,
-            "timezone" to match.matchDetails.localeMatch.components.timezone
-          )
-        )
-      )
-
-      matchMap
+    Function("getDeferredDeepLink") {
+      instanceOrNull()?.getDeferredDeepLink()?.let { DLNBridgeConverters.referrerDeeplink(it) }
     }
-
-    return mapOf(
-      "ttlSeconds" to matchResponse.ttlSeconds,
-      "matches" to matches
-    )
   }
 }

@@ -94,3 +94,6 @@ android/generated
 
 # React Native Nitro Modules
 nitrogen/
+# Recreated by `expo-module prepare` (expo-module-configure template sync).
+# Unused: this package lints with Ultracite (Biome), see biome.json.
+.eslintrc.js

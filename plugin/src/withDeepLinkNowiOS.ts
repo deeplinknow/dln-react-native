@@ -1,14 +1,21 @@
 import type { ConfigPlugin } from "@expo/config-plugins";
 
-interface DeepLinkNowPluginProps {
-  iosDeploymentTarget?: string;
-  androidMinSdkVersion?: number;
-}
-
-export const withDeepLinkNowiOS: ConfigPlugin<DeepLinkNowPluginProps | void> = (
+/** Adds `applinks:<domain>` for each domain to `ios.associatedDomains` (no duplicates). */
+export const withDeepLinkNowiOS: ConfigPlugin<{ domains: string[] }> = (
   config,
+  { domains }
 ) => {
-  // iOS-specific configuration for DeepLinkNow
-  // The native module will be auto-linked via Expo's autolinking
+  if (!domains.length) {
+    return config;
+  }
+  const existing = config.ios?.associatedDomains ?? [];
+  const lower = new Set(existing.map((d) => d.toLowerCase()));
+  const added = domains
+    .map((d) => `applinks:${d}`)
+    .filter((entry) => !lower.has(entry.toLowerCase()));
+  config.ios = {
+    ...config.ios,
+    associatedDomains: [...existing, ...added],
+  };
   return config;
 };

@@ -1,0 +1,162 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "extends": [
+    "ultracite/biome/core",
+    "ultracite/biome/react",
+    "ultracite/biome/jest"
+  ],
+  "files": {
+    "includes": [
+      "!**/node_modules",
+      "!**/build",
+      "!**/ios",
+      "!**/android",
+      "!**/.expo",
+      "!**/pnpm-lock.yaml",
+      "!**/package-lock.json",
+      "!**/yarn.lock",
+      "!**/*.tsbuildinfo"
+    ]
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        // Object key order is observable (query params, JSON bodies, Object.keys order tested by SDK-34..36).
+        "useSortedKeys": "off"
+      }
+    }
+  },
+  "linter": {
+    "rules": {
+      "complexity": {
+        // Mirrors preve/web: cognitive-complexity scores flag the readable UTF-8 decoder and retry loop.
+        "noExcessiveCognitiveComplexity": "off",
+        // Mirrors preve/web: the "simplified" form (De Morgan rewrites) is often less readable.
+        "useSimplifiedLogicExpression": "off"
+      },
+      "correctness": {
+        // Node-side code here (Jest, the config plugin, *.config.js) is CommonJS, where import.meta does not exist.
+        "noGlobalDirnameFilename": "off"
+      },
+      "performance": {
+        // Mirrors preve/web: hoisting every regex literal hurts locality for no measurable gain.
+        "useTopLevelRegex": "off",
+        // Mirrors preve/web: sequential awaits are deliberate (request retries with backoff, ordered file moves).
+        "noAwaitInLoops": "off",
+        // Mirrors web: inline handlers are idiomatic React; the re-render cost is negligible here.
+        "noJsxPropsBind": "off"
+      },
+      "style": {
+        // Mirrors preve/web: Expo Router screens and config plugins require default exports.
+        "noDefaultExport": "off",
+        // Mirrors preve/web: short nested ternaries read fine.
+        "noNestedTernary": "off",
+        // Array.prototype.at is missing on JSC before iOS 15.4, and the peer range is react-native >= 0.71.
+        "useAtIndex": "off",
+        // Mirrors preve/web: `if (arr.length)` is clear.
+        "useExplicitLengthCheck": "off",
+        // Mirrors preve/web: reassigning a normalised parameter is clearer than a shadow variable.
+        "noParameterAssign": "off"
+      },
+      "suspicious": {
+        // Mirrors preve/web: static lists rendered once never reorder.
+        "noArrayIndexKey": "off",
+        // Mirrors preve/web: console is the SDK's opt-in logger (enableLogs) and the example's output.
+        "noConsole": "off",
+        // Mirrors preve/web: async signatures are kept for interface consistency (mocks, native-module shims).
+        "useAwait": "off",
+        // Mirrors preve/web: shadowing in nested callbacks is common and harmless.
+        "noShadow": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      // Tests: `!` on fixture lookups fails loudly if wrong, and `() => {}` no-op mocks are idiomatic.
+      "includes": ["**/__tests__/**"],
+      "linter": {
+        "rules": {
+          "style": { "noNonNullAssertion": "off" },
+          "suspicious": { "noEmptyBlockStatements": "off" }
+        }
+      }
+    },
+    {
+      // The package entry point: it has to re-export the public types and errors.
+      "includes": ["src/index.ts"],
+      "linter": {
+        "rules": {
+          "performance": { "noBarrelFile": "off" }
+        }
+      }
+    },
+    {
+      // Jest setup file: runs inside Jest, like the tests, so the `jest` global exists.
+      "includes": ["setup-jest.js"],
+      "javascript": { "globals": ["jest"] }
+    },
+    {
+      // Bit operations are the algorithm here (UTF-8 percent-decoding, string hash mixing).
+      "includes": ["src/deeplink.ts", "src/index.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": { "noBitwiseOperators": "off" }
+        }
+      }
+    },
+    {
+      // React Native Codegen parses this spec: the file must be named Native<Module>.ts, methods use
+      // method signatures (build-config.test.ts reads them too), `Object` is Codegen's untyped-object type,
+      // and member order mirrors the native implementations section by section.
+      "includes": ["src/specs/**"],
+      "assist": {
+        "actions": { "source": { "useSortedInterfaceMembers": "off" } }
+      },
+      "linter": {
+        "rules": {
+          "complexity": { "noBannedTypes": "off" },
+          "style": {
+            "useConsistentMethodSignatures": "off",
+            "useFilenamingConvention": "off"
+          }
+        }
+      }
+    },
+    {
+      // Expo config plugins are named after the withX function they export.
+      "includes": ["plugin/src/**", "dln-example/plugins/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useFilenamingConvention": {
+              "level": "error",
+              "options": {
+                "requireAscii": true,
+                "strictCase": false,
+                "filenameCases": ["kebab-case", "camelCase"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      // Expo Router: route filenames are URL segments (`(tabs)`, `_layout`, `+native-intent`).
+      "includes": ["dln-example/app/**"],
+      "linter": {
+        "rules": {
+          "style": { "useFilenamingConvention": "off" }
+        }
+      }
+    },
+    {
+      // Mirrors preve's Expo apps: hooks in the example deliberately run once on mount.
+      "includes": ["dln-example/**"],
+      "linter": {
+        "rules": {
+          "correctness": { "useExhaustiveDependencies": "off" }
+        }
+      }
+    }
+  ]
+}

@@ -2,7 +2,11 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "outDir": "./build",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    // Config plugins are loaded by Node with require() (app.plugin.js): emit CommonJS.
+    // The base config emits ESM with extensionless imports, which Node cannot load.
+    "module": "commonjs",
+    "moduleResolution": "node"
   },
   "include": ["./src"],
   "exclude": ["**/__tests__", "**/__mocks__"]

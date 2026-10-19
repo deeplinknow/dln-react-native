@@ -1,50 +1,62 @@
-# Welcome to your Expo app 👋
+# DeepLinkNow Expo example
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An Expo (development build) app that shows the whole `@deeplinknow/react-native` integration on one screen: `app/(tabs)/index.tsx`.
 
-## Get started
+1. `DeepLinkNow.initialize(apiKey)` at startup. It rejects with a `DLNError` (`code`, `message`), which the screen shows.
+2. `DeepLinkNow.checkDeferredDeepLink({ minConfidence })` once, on first launch. The screen shows `path`, `queryParams`, `fullPath`, `source`, `confidenceScore` and `matchQuality`.
+3. `DeepLinkNow.parseDeepLink(url)` for Universal Links / App Links that open the installed app. `app/+native-intent.tsx` sends every incoming link to the home screen so Expo Router doesn't show "Unmatched route".
 
-1. Install dependencies
+For testing, the screen also has a **minConfidence** picker (Off / 30 / 50 / 75), **Check again (force)** and **Reset deferred link** (`resetDeferredDeepLink()`).
 
-   ```bash
-   npm install
-   ```
+The DeepLinkNow config plugin is in `app.json`:
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```json
+["@deeplinknow/react-native", { "domains": ["dln-example.deeplinknow.com", "go.example.com"] }]
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+It adds `applinks:<domain>` (iOS Associated Domains) and an auto-verified App Links intent filter (Android) for each domain. Replace the domains and `API_KEY` in `app/(tabs)/index.tsx` with your app's values. `test_api_key` is DeepLinkNow's demo key and returns sample data.
 
-## Learn more
+This app does not run in Expo Go, which has no DeepLinkNow native code. Use a development build.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Run
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+pnpm install
+npx expo prebuild --clean
+npx expo run:ios       # or: npx expo run:android
+```
 
-## Join the community
+To build without running:
 
-Join our community of developers creating universal apps.
+```bash
+cd ios && pod install && xcodebuild build -workspace dlnexample.xcworkspace -scheme dlnexample \
+  -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
+cd android && ./gradlew assembleDebug   # JDK 17+
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Local SDKs (default) vs published SDKs
+
+Until the SDKs are published, the example builds everything from this repository:
+
+| Piece | Local (default) | Where it is set |
+|---|---|---|
+| `@deeplinknow/react-native` | `"file:../"` (the package in `packages/dln-rn`) | `package.json` |
+| iOS `DeepLinkNow` pod | `pod 'DeepLinkNow', :path => '../../../dln-ios'` | `plugins/withLocalDeepLinkNowSdks.js` writes it into the generated `ios/Podfile` |
+| Android `com.deeplinknow:dln-android` | Gradle module `:dln-android-local` (`plugins/dln-android-local/build.gradle`), which compiles `packages/dln-android/src/main` with this app's Android Gradle Plugin and replaces the Maven artifact through dependency substitution | `plugins/withLocalDeepLinkNowSdks.js` writes it into the generated `android/settings.gradle` and `android/build.gradle` |
+
+`file:../` is installed as a copy by pnpm. Rebuild the package and reinstall after changing it:
+
+```bash
+cd .. && npx tsc -p tsconfig.json && npx tsc -p plugin/tsconfig.json && cd dln-example
+pnpm install --force
+```
+
+The Android SDK is not an included build because `packages/dln-android` pins AGP 8.3.2, Expo SDK 54 uses AGP 8.11, and Gradle doesn't allow two AGP versions in one build. If you change the dependencies in `packages/dln-android/build.gradle.kts`, change them in `plugins/dln-android-local/build.gradle` too.
+
+### Switching to the published versions
+
+After DeepLinkNow 1.1.0 (CocoaPods), `com.deeplinknow:dln-android` 1.1.0 (Maven) and `@deeplinknow/react-native` 1.2.0 (npm) are published:
+
+1. Native SDKs: in `plugins/withLocalDeepLinkNowSdks.js`, set `const USE_LOCAL_NATIVE_SDKS = false;`. The RN package then pulls `DeepLinkNow ~> 1.1.0` and `dln-android:1.1.0` (the versions in its `package.json` `"deeplinknow"` field). You can also delete the plugin's `app.json` entry.
+2. RN package: in `package.json`, change `"@deeplinknow/react-native": "file:../"` to `"@deeplinknow/react-native": "1.2.0"`.
+3. Run `pnpm install && npx expo prebuild --clean`.

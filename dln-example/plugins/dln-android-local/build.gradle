@@ -1,0 +1,47 @@
+// Example-only: compiles the LOCAL dln-android sources (packages/dln-android) with this
+// app's Android Gradle Plugin, and stands in for com.deeplinknow:dln-android via dependency
+// substitution (see ../withLocalDeepLinkNowSdks.js).
+//
+// Why not includeBuild('../../../dln-android')? That project pins AGP 8.3.2, Expo SDK 54
+// uses AGP 8.11, and Gradle refuses two AGP versions in one (composite) build.
+//
+// Keep the dependencies below in sync with packages/dln-android/build.gradle.kts.
+
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+def dlnAndroidRoot = file('../../../../dln-android')
+
+android {
+    namespace 'com.deeplinknow'
+    compileSdk rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 35
+
+    defaultConfig {
+        minSdk 24
+        consumerProguardFiles "${dlnAndroidRoot}/consumer-rules.pro"
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile "${dlnAndroidRoot}/src/main/AndroidManifest.xml"
+            java.srcDirs = ["${dlnAndroidRoot}/src/main/java"]
+        }
+    }
+
+    // React Native configures every Android library for Java 17; match it.
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'com.android.installreferrer:installreferrer:2.2'
+}

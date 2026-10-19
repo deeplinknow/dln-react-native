@@ -1,9 +1,12 @@
 {
   "platforms": ["ios", "android"],
   "ios": {
+    "podspecPath": "DeeplinknowReactNative.podspec",
     "modules": ["DeeplinknowReactNativeModule"]
   },
   "android": {
-    "modules": ["expo.modules.deeplinknowreactnative.DeeplinknowReactNativeModule"]
+    "modules": [
+      "expo.modules.deeplinknowreactnative.DeeplinknowReactNativeModule"
+    ]
   }
 }
