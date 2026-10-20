@@ -11,7 +11,7 @@ The package wraps the native iOS and Android SDKs, so React Native returns the s
 
 ## Requirements
 
-- React Native 0.71 or later (old and new architecture), or Expo SDK 50 or later with a development build. Expo Go has no native code (see [Expo Go](#expo-go-degraded-mode)).
+- React Native 0.81 or later (old and new architecture), or Expo SDK 54 or later with a development build. Expo Go has no native code (see [Expo Go](#expo-go-degraded-mode)).
 - iOS 13 or later
 - Android API 24 (Android 7.0) or later
 
@@ -43,6 +43,8 @@ Then rebuild the native projects: `npx expo prebuild` (or let EAS Build do it), 
 npm install @deeplinknow/react-native
 cd ios && pod install
 ```
+
+If `pod install` (or `npx expo prebuild`) says no spec satisfies `DeepLinkNow (~> 1.2.0)`, your local CocoaPods spec cache is older than the release. Run `cd ios && pod install --repo-update` once.
 
 Autolinking picks the right native module (TurboModule on the new architecture, bridge module on the old one). Add the link domains by hand:
 

@@ -1,6 +1,6 @@
 {
   "name": "@deeplinknow/react-native",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "React Native + Expo SDK for the Deeplink Now deferred deep linking platform",
   "keywords": [
     "react-native",
@@ -116,7 +116,7 @@
     "expo": "*",
     "expo-modules-core": "*",
     "react": "*",
-    "react-native": ">=0.71.0"
+    "react-native": ">=0.81.0"
   },
   "peerDependenciesMeta": {
     "@expo/config-plugins": {

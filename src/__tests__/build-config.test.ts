@@ -426,8 +426,8 @@ describe("RN-03: native glue emits the wire shape for findDeferredUser", () => {
 });
 
 describe("RN-22: package metadata and minimums", () => {
-  it("RN-22: peer ranges (react-native >= 0.71, expo/expo-modules-core optional)", () => {
-    expect(pkg.peerDependencies["react-native"]).toBe(">=0.71.0");
+  it("RN-22: peer ranges (react-native >= 0.81, expo/expo-modules-core optional)", () => {
+    expect(pkg.peerDependencies["react-native"]).toBe(">=0.81.0");
     expect(pkg.peerDependenciesMeta.expo.optional).toBe(true);
     expect(pkg.peerDependenciesMeta["expo-modules-core"].optional).toBe(true);
     expect(pkg.dependencies?.["expo-modules-core"]).toBeUndefined();
@@ -452,8 +452,11 @@ describe("RN-22: package metadata and minimums", () => {
     );
   });
 
-  it("version is bumped as a minor from 1.1.20", () => {
-    expect(pkg.version).toBe("1.2.0");
+  it("SDK-84: version shares major.minor with the pinned native SDKs", () => {
+    const minor = (v: string) => v.split(".").slice(0, 2).join(".");
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(minor(pkg.version)).toBe(minor(pkg.deeplinknow.iosSdkVersion));
+    expect(minor(pkg.version)).toBe(minor(pkg.deeplinknow.androidSdkVersion));
   });
 });
 
