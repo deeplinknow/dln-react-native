@@ -67,7 +67,8 @@ The helper never throws. If something fails (offline, a wrong API key), the app 
 | `useClipboard` | `true` | iOS: check the link the landing page copied first |
 | `timeoutMs` | `3000` | The longest the first launch waits for the link, in milliseconds. `0` never waits |
 | `mapUniversalLinks` | `true` | Rewrite links on your DeepLinkNow domains to their in-app path |
-| `mapLink` | the link's `fullPath` | `(link, source) => string \| null`. Use it when your screen paths differ from your link paths. `source` is `"deferred"` or `"universal"`. Return `null` to keep the incoming URL |
+| `mapLink` | the link's `fullPath` | `(link, source) => string \| null`. Use it when your screen paths differ from your link paths. `source` is `"deferred"` or `"universal"`. Return `null` to keep the incoming URL (a deferred link you don't route stays available to `useDeferredDeepLink()`) |
+| `routeDeferredLink` | `true` | Unreleased. `false` starts the check at launch but doesn't route to the deferred link or wait for it; `useDeferredDeepLink()` delivers it. See [Open the link after sign-in](#open-the-link-after-sign-in) |
 
 For example, if your links look like `/p/123` but the screen is `app/products/[id].tsx`:
 
@@ -84,30 +85,44 @@ If you already have a `redirectSystemPath` with your own rewrites, call `redirec
 
 ### Open the link after sign-in
 
-If a deep-linked screen needs a signed-in user, set `timeoutMs: 0` in `+native-intent.tsx` so the app starts immediately and every deferred link comes through the hook, then navigate once the user has signed in:
+A deferred link usually arrives before the user has an account: they tapped an invite, installed the app, and now see your sign-in screen. If the linked screen needs a signed-in user, hold the link until sign-in finishes, then open it once. (Unreleased: `hold`, `onLink`, `heldLink` and `routeDeferredLink` ship in the next minor version.)
+
+1. In `app/+native-intent.tsx`, set `routeDeferredLink: false`. The helper still starts the check at launch (so the link is found inside its 1-hour claim window), but it starts the app at once and doesn't route to the link.
+2. In the root layout, pass `hold: !isSignedIn` and `onLink` to `useDeferredDeepLink()`. While `hold` is true the link is kept in memory (`link` is `null`, `heldLink` has it). When `hold` turns false, `onLink` is called exactly once.
+
+```tsx
+// app/+native-intent.tsx
+import { createRedirectSystemPath } from "@deeplinknow/react-native/expo-router";
+
+export const redirectSystemPath = createRedirectSystemPath({
+  apiKey: "YOUR_API_KEY",
+  routeDeferredLink: false,
+});
+```
 
 ```tsx
 // app/_layout.tsx
 import { useDeferredDeepLink } from "@deeplinknow/react-native";
 import { Stack, useRouter } from "expo-router";
-import { useEffect } from "react";
 
 export default function RootLayout() {
-  const { link, clear } = useDeferredDeepLink();
   const { isSignedIn } = useAuth(); // your auth
   const router = useRouter();
 
-  useEffect(() => {
-    if (link && isSignedIn) {
-      clear(); // so it opens once
-      router.push(link.fullPath);
-    }
-  }, [link, isSignedIn]);
+  useDeferredDeepLink({
+    hold: !isSignedIn,
+    onLink: (link) => router.push(link.fullPath),
+  });
 
   return <Stack />;
 }
 ```
 
+`onLink` marks the link handled before it runs, so a re-render, a second component or a development reload never opens it twice. To show the link on the sign-in screen ("Sign in to open your invite"), read `heldLink`. To drop it (the user signs out, or declines the invite), call `clear()`. The link lives in memory only: if the app is killed before sign-in, it is gone. On the next launch the native SDK doesn't run the deferred check again (first launch only).
+
+To hold only some links, keep `routeDeferredLink` on and return `null` from `mapLink` for the links that need sign-in. The helper routes the others at launch, and a link it didn't route stays available to the hook.
+
+The 1.3.0 pattern (`if (link && isSignedIn) { clear(); router.push(link.fullPath); }` in an effect) still works.
 
 ### Without Expo Router
 

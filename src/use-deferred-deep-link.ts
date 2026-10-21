@@ -18,11 +18,29 @@ import type { DeferredDeepLink } from "./types";
 export interface UseDeferredDeepLinkOptions extends DeferredSessionOptions {
   /** Set to false to not start the check from this component (e.g. until consent). Default true. */
   enabled?: boolean;
+  /**
+   * Auth gate (RN-33). While true, a link that was found is held: `link` stays null,
+   * `heldLink` has it, and `onLink` is not called. The check still runs, so the link is
+   * resolved at launch (inside its claim window) and kept in memory for this process. When
+   * `hold` turns false the link is delivered. Typically `hold: !isSignedIn`. Default false.
+   */
+  hold?: boolean;
+  /**
+   * Called once per process with the link when it is available and not held (RN-34). The
+   * link is marked handled (like `clear()`) before the call, so no other component, render
+   * or the Expo Router helper delivers it again. Errors it throws are swallowed (SDK-85).
+   */
+  onLink?: (link: DeferredDeepLink) => void;
 }
 
 export interface UseDeferredDeepLinkResult {
   /** Marks the link as handled: `link` becomes null everywhere and stays null in this process. */
   clear: () => void;
+  /**
+   * The link while `hold` keeps it from `link` (e.g. to say "Sign in to open your invite"),
+   * otherwise null. Null too once the link was handled.
+   */
+  heldLink: DeferredDeepLink | null;
   /** True until the check has finished. */
   isLoading: boolean;
   /**
@@ -52,8 +70,30 @@ export function useDeferredDeepLinkFor(
     }
   }, [enabled, sdk]);
 
+  const hold = options.hold === true;
+  const available = state.handled ? null : state.link;
+
+  useEffect(() => {
+    const { onLink } = optionsRef.current;
+    if (!(available && onLink) || hold) {
+      return;
+    }
+    // Read the shared state again: another component may have handled it in this commit.
+    const current = getDeferredSessionState();
+    if (current.handled || current.link !== available) {
+      return;
+    }
+    markDeferredLinkHandled();
+    try {
+      onLink(available);
+    } catch {
+      // The app's callback must not break rendering (SDK-85).
+    }
+  }, [available, hold]);
+
   return {
-    link: state.handled ? null : state.link,
+    link: hold ? null : available,
+    heldLink: hold ? available : null,
     isLoading:
       state.status === "pending" || (enabled && state.status === "idle"),
     clear: markDeferredLinkHandled,

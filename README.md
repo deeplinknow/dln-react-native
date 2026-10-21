@@ -162,33 +162,46 @@ export const redirectSystemPath = createRedirectSystemPath({
 
 To add your own rewrites, call `redirectSystemPathWithDeferredLink(event, options)` from your own `redirectSystemPath`.
 
-### Sign-in first
+### After sign-in
 
-To open a deep link only after sign-in, gate the hook's link on your auth state in the root layout:
+A deferred link usually arrives before the user has an account: they tapped an invite, installed the app, and now see your sign-in screen. If the linked screen needs a signed-in user, hold the link until sign-in finishes, then open it once. (Unreleased: `hold`, `onLink`, `heldLink` and `routeDeferredLink` ship in the next minor version.)
+
+1. In `app/+native-intent.tsx`, set `routeDeferredLink: false`. The helper still starts the check at launch (so the link is found inside its 1-hour claim window), but it starts the app at once and doesn't route to the link.
+2. In the root layout, pass `hold: !isSignedIn` and `onLink` to `useDeferredDeepLink()`. While `hold` is true the link is kept in memory (`link` is `null`, `heldLink` has it). When `hold` turns false, `onLink` is called exactly once.
+
+```tsx
+// app/+native-intent.tsx
+import { createRedirectSystemPath } from "@deeplinknow/react-native/expo-router";
+
+export const redirectSystemPath = createRedirectSystemPath({
+  apiKey: "YOUR_API_KEY",
+  routeDeferredLink: false,
+});
+```
 
 ```tsx
 // app/_layout.tsx
 import { useDeferredDeepLink } from "@deeplinknow/react-native";
 import { Stack, useRouter } from "expo-router";
-import { useEffect } from "react";
 
 export default function RootLayout() {
-  const { link, clear } = useDeferredDeepLink();
   const { isSignedIn } = useAuth(); // your auth
   const router = useRouter();
 
-  useEffect(() => {
-    if (link && isSignedIn) {
-      clear(); // handle it once
-      router.push(link.fullPath);
-    }
-  }, [link, isSignedIn]);
+  useDeferredDeepLink({
+    hold: !isSignedIn,
+    onLink: (link) => router.push(link.fullPath),
+  });
 
   return <Stack />;
 }
 ```
 
-To always deliver through the hook (for example, when every deep link needs a signed-in user), pass `timeoutMs: 0` to `createRedirectSystemPath`.
+`onLink` marks the link handled before it runs, so a re-render, a second component or a development reload never opens it twice. To show the link on the sign-in screen ("Sign in to open your invite"), read `heldLink`. To drop it (the user signs out, or declines the invite), call `clear()`. The link lives in memory only: if the app is killed before sign-in, it is gone. On the next launch the native SDK doesn't run the deferred check again (first launch only).
+
+To hold only some links, keep `routeDeferredLink` on and return `null` from `mapLink` for the links that need sign-in. The helper routes the others at launch, and a link it didn't route stays available to the hook.
+
+The 1.3.0 pattern (`if (link && isSignedIn) { clear(); router.push(link.fullPath); }` in an effect) still works.
 
 ## API
 
@@ -320,9 +333,9 @@ DeepLinkNow.parseDeepLink("https://myapp.deeplinknow.com/s?q=red+shoes&tag=a&tag
 
 The host rule used by `parseDeepLink` and `checkClipboard`.
 
-### `useDeferredDeepLink(options?): { link, isLoading, clear }`
+### `useDeferredDeepLink(options?): { link, heldLink, isLoading, clear }`
 
-A React hook (named export) for the deferred deep link. It runs `checkDeferredDeepLink()` once per app process, on mount, unless it already ran (from the Expo Router helper or another component), and shares the result. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, and `enabled` (default `true`). `link` is `null` until a link is found, after `clear()`, and when the Expo Router helper already routed to it. Without Expo Router:
+A React hook (named export) for the deferred deep link. It runs `checkDeferredDeepLink()` once per app process, on mount, unless it already ran (from the Expo Router helper or another component), and shares the result. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, `enabled` (default `true`), and, unreleased, `hold` (default `false`) and `onLink` (see [After sign-in](#after-sign-in)). `link` is `null` until a link is found, while `hold` is true (then `heldLink` has it), after `clear()`, and when the link was already handled (routed by the Expo Router helper, or passed to `onLink`). Without Expo Router:
 
 ```tsx
 const { link, clear } = useDeferredDeepLink({ apiKey: "your-public-api-key" });
