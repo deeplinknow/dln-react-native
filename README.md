@@ -98,6 +98,8 @@ Linking.addEventListener("url", ({ url }) => {
 
 With Expo Router, resolve the deferred deep link in `app/+native-intent.tsx`. Expo Router calls it with the launch URL before the first screen mounts, so on the first launch after install the app opens straight on the link the user tapped: no flash of the home screen, and no race with redirects in your layouts.
 
+The minimal setup is two files: the helper in `app/+native-intent.tsx`, and `useDeferredDeepLink()` in your root layout.
+
 ```tsx
 // app/+native-intent.tsx
 import { createRedirectSystemPath } from "@deeplinknow/react-native/expo-router";
@@ -107,7 +109,30 @@ export const redirectSystemPath = createRedirectSystemPath({
 });
 ```
 
-That's the whole integration. The helper:
+```tsx
+// app/_layout.tsx
+import { useDeferredDeepLink } from "@deeplinknow/react-native";
+import { Stack, useRouter } from "expo-router";
+import { useEffect } from "react";
+
+export default function RootLayout() {
+  const { link, clear } = useDeferredDeepLink();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (link) {
+      clear(); // handle it once
+      router.push(link.fullPath);
+    }
+  }, [link]);
+
+  return <Stack />;
+}
+```
+
+**Don't skip the hook.** The helper waits at most `timeoutMs` (default 3000 ms) before the first screen mounts. A link found after that (a slow network) reaches the app only through `useDeferredDeepLink()`. Without the hook, that link is dropped. The hook shares the helper's check, so nothing runs twice, and a link the helper already routed to comes back as `null`.
+
+The helper:
 
 - **First launch after install** (opened from the store or the home screen): initializes the SDK, runs `checkDeferredDeepLink()` and returns the link's `fullPath`, e.g. `/products/123?ref=newsletter`, as the initial route. It waits at most `timeoutMs` (default 3000) and then starts the app on its normal route.
 - **Opened by a link on your DeepLinkNow domains** (`alias.deeplinknow.com` or a verified custom domain), on any launch: returns the link's in-app path.
@@ -137,9 +162,9 @@ export const redirectSystemPath = createRedirectSystemPath({
 
 To add your own rewrites, call `redirectSystemPathWithDeferredLink(event, options)` from your own `redirectSystemPath`.
 
-### Sign-in first, and late links
+### Sign-in first
 
-A deferred link found after `timeoutMs` (a slow network), or one you want to open only after sign-in, comes from `useDeferredDeepLink()`. It shares the helper's check, so nothing runs twice, and a link the helper already routed to comes back as `null`:
+To open a deep link only after sign-in, gate the hook's link on your auth state in the root layout:
 
 ```tsx
 // app/_layout.tsx

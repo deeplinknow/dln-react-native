@@ -11,7 +11,7 @@ Delete this file after merging.
 
 If your app uses Expo Router, get the deferred deep link in `app/+native-intent.tsx`. Expo Router calls this file with the URL that launched the app, before the first screen mounts. Resolving the link there means the app opens straight on the screen the user tapped: the home screen doesn't flash first, and your layouts' redirects (an auth gate, onboarding) see the right route from the start.
 
-Create `app/+native-intent.tsx`:
+The minimal setup is two files. Create `app/+native-intent.tsx`:
 
 ```tsx
 import { createRedirectSystemPath } from "@deeplinknow/react-native/expo-router";
@@ -21,7 +21,31 @@ export const redirectSystemPath = createRedirectSystemPath({
 });
 ```
 
-That's the whole integration. You don't need to call `DeepLinkNow.initialize` anywhere else: the helper does it.
+And handle late links in your root layout, `app/_layout.tsx`:
+
+```tsx
+import { useDeferredDeepLink } from "@deeplinknow/react-native";
+import { Stack, useRouter } from "expo-router";
+import { useEffect } from "react";
+
+export default function RootLayout() {
+  const { link, clear } = useDeferredDeepLink();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (link) {
+      clear(); // so it opens once
+      router.push(link.fullPath);
+    }
+  }, [link]);
+
+  return <Stack />;
+}
+```
+
+**Don't skip the second file.** The helper waits at most `timeoutMs` (3 seconds by default) before the first screen mounts. If the link is found after that, for example on a slow connection, it reaches your app only through `useDeferredDeepLink()`. Without the hook, that link is dropped. The hook shares the helper's check, so the network calls run once, and a link the helper already opened comes back as `null`.
+
+You don't need to call `DeepLinkNow.initialize` anywhere else: the helper does it.
 
 What happens on each launch:
 
@@ -60,7 +84,7 @@ If you already have a `redirectSystemPath` with your own rewrites, call `redirec
 
 ### Open the link after sign-in
 
-If a deep-linked screen needs a signed-in user, take the link from `useDeferredDeepLink()` instead and navigate once the user has signed in. Set `timeoutMs: 0` in `+native-intent.tsx` so the app starts immediately, and handle the link in your root layout:
+If a deep-linked screen needs a signed-in user, set `timeoutMs: 0` in `+native-intent.tsx` so the app starts immediately and every deferred link comes through the hook, then navigate once the user has signed in:
 
 ```tsx
 // app/_layout.tsx
@@ -84,7 +108,6 @@ export default function RootLayout() {
 }
 ```
 
-`useDeferredDeepLink()` shares the helper's check, so the network calls run once. It also delivers a link that arrived after `timeoutMs` on a slow connection. A link the helper already opened comes back as `null`.
 
 ### Without Expo Router
 
@@ -107,4 +130,4 @@ function App() {
 }
 ```
 
-It returns `{ link, isLoading, clear }`. `link` is `null` until a link is found, after `clear()`, and on every launch after the first.
+It returns `{ link, isLoading, clear }`. `link` is `null` until a link is found, after `clear()`, and on every launch after the first (in Expo Go, which has no native first-launch flag, the check runs again on each launch while the click can still be claimed).
