@@ -55,8 +55,8 @@ The Android SDK is not an included build because `packages/dln-android` pins AGP
 
 ### Switching to the published versions
 
-After DeepLinkNow 1.1.0 (CocoaPods), `com.deeplinknow:dln-android` 1.1.0 (Maven) and `@deeplinknow/react-native` 1.2.0 (npm) are published:
+After DeepLinkNow 1.3.0 (CocoaPods), `com.deeplinknow:dln-android` 1.3.0 (Maven) and `@deeplinknow/react-native` 1.3.0 (npm) are published:
 
-1. Native SDKs: in `plugins/withLocalDeepLinkNowSdks.js`, set `const USE_LOCAL_NATIVE_SDKS = false;`. The RN package then pulls `DeepLinkNow ~> 1.1.0` and `dln-android:1.1.0` (the versions in its `package.json` `"deeplinknow"` field). You can also delete the plugin's `app.json` entry.
-2. RN package: in `package.json`, change `"@deeplinknow/react-native": "file:../"` to `"@deeplinknow/react-native": "1.2.0"`.
+1. Native SDKs: in `plugins/withLocalDeepLinkNowSdks.js`, set `const USE_LOCAL_NATIVE_SDKS = false;`. The RN package then pulls `DeepLinkNow ~> 1.3.0` and `dln-android:1.3.0` (the versions in its `package.json` `"deeplinknow"` field). You can also delete the plugin's `app.json` entry.
+2. RN package: in `package.json`, change `"@deeplinknow/react-native": "file:../"` to `"@deeplinknow/react-native": "1.3.0"`.
 3. Run `pnpm install && npx expo prebuild --clean`.

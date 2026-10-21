@@ -44,7 +44,7 @@ npm install @deeplinknow/react-native
 cd ios && pod install
 ```
 
-If `pod install` (or `npx expo prebuild`) says no spec satisfies `DeepLinkNow (~> 1.2.0)`, your local CocoaPods spec cache is older than the release. Run `cd ios && pod install --repo-update` once.
+If `pod install` (or `npx expo prebuild`) says no spec satisfies `DeepLinkNow (~> 1.3.0)`, your local CocoaPods spec cache is older than the release. Run `cd ios && pod install --repo-update` once.
 
 Autolinking picks the right native module (TurboModule on the new architecture, bridge module on the old one). Add the link domains by hand:
 
@@ -79,6 +79,8 @@ async function handleDeferredDeepLink() {
 }
 ```
 
+Using Expo Router? Use the [Expo Router](#expo-router) helper instead: it opens the app straight on the link.
+
 None of these calls throw or reject, so no `try`/`catch` is needed. A failure resolves `null`, is logged as a warning, and is kept in `DeepLinkNow.lastError` (see [Errors](#errors)).
 
 For links that open an already-installed app (Universal Links / App Links), use React Native's `Linking` and `parseDeepLink`, so deferred and direct opens route the same way:
@@ -91,6 +93,77 @@ Linking.addEventListener("url", ({ url }) => {
   if (parsed) navigate(parsed.path, parsed.queryParams);
 });
 ```
+
+## Expo Router
+
+With Expo Router, resolve the deferred deep link in `app/+native-intent.tsx`. Expo Router calls it with the launch URL before the first screen mounts, so on the first launch after install the app opens straight on the link the user tapped: no flash of the home screen, and no race with redirects in your layouts.
+
+```tsx
+// app/+native-intent.tsx
+import { createRedirectSystemPath } from "@deeplinknow/react-native/expo-router";
+
+export const redirectSystemPath = createRedirectSystemPath({
+  apiKey: "your-public-api-key",
+});
+```
+
+That's the whole integration. The helper:
+
+- **First launch after install** (opened from the store or the home screen): initializes the SDK, runs `checkDeferredDeepLink()` and returns the link's `fullPath`, e.g. `/products/123?ref=newsletter`, as the initial route. It waits at most `timeoutMs` (default 3000) and then starts the app on its normal route.
+- **Opened by a link on your DeepLinkNow domains** (`alias.deeplinknow.com` or a verified custom domain), on any launch: returns the link's in-app path.
+- **Anything else** (later launches, other URLs, your own custom-scheme links): returns the path unchanged.
+
+It never throws. On a failure or timeout the app starts where it would have without DeepLinkNow, and `DeepLinkNow.lastError` says why. The helper initializes the SDK itself, so you don't need to call `DeepLinkNow.initialize` elsewhere.
+
+Options:
+
+| Option | Default | |
+|---|---|---|
+| `apiKey` | required | Your public API key |
+| `config` | `{}` | Passed to `initialize` (`enableLogs`, `baseUrl`, `timeoutMs`, `retryAttempts`) |
+| `minConfidence` | off | Ignore fingerprint matches below this score (0-100) |
+| `useClipboard` | `true` | iOS: check the pasteboard first |
+| `timeoutMs` | `3000` | Longest wait on the first launch. `0` never waits |
+| `mapUniversalLinks` | `true` | Rewrite links on your DeepLinkNow domains to their in-app path |
+| `mapLink` | `link.fullPath` | `(link, source) => href \| null` when your routes don't match your link paths. `source` is `"deferred"` or `"universal"`. Return `null` to keep the incoming path |
+
+```tsx
+export const redirectSystemPath = createRedirectSystemPath({
+  apiKey: "your-public-api-key",
+  minConfidence: 50,
+  mapLink: (link) => (link.path.startsWith("/p/") ? `/products/${link.path.slice(3)}` : link.fullPath),
+});
+```
+
+To add your own rewrites, call `redirectSystemPathWithDeferredLink(event, options)` from your own `redirectSystemPath`.
+
+### Sign-in first, and late links
+
+A deferred link found after `timeoutMs` (a slow network), or one you want to open only after sign-in, comes from `useDeferredDeepLink()`. It shares the helper's check, so nothing runs twice, and a link the helper already routed to comes back as `null`:
+
+```tsx
+// app/_layout.tsx
+import { useDeferredDeepLink } from "@deeplinknow/react-native";
+import { Stack, useRouter } from "expo-router";
+import { useEffect } from "react";
+
+export default function RootLayout() {
+  const { link, clear } = useDeferredDeepLink();
+  const { isSignedIn } = useAuth(); // your auth
+  const router = useRouter();
+
+  useEffect(() => {
+    if (link && isSignedIn) {
+      clear(); // handle it once
+      router.push(link.fullPath);
+    }
+  }, [link, isSignedIn]);
+
+  return <Stack />;
+}
+```
+
+To always deliver through the hook (for example, when every deep link needs a signed-in user), pass `timeoutMs: 0` to `createRedirectSystemPath`.
 
 ## API
 
@@ -221,6 +294,20 @@ DeepLinkNow.parseDeepLink("https://myapp.deeplinknow.com/s?q=red+shoes&tag=a&tag
 ### `isValidDomain(host): boolean`
 
 The host rule used by `parseDeepLink` and `checkClipboard`.
+
+### `useDeferredDeepLink(options?): { link, isLoading, clear }`
+
+A React hook (named export) for the deferred deep link. It runs `checkDeferredDeepLink()` once per app process, on mount, unless it already ran (from the Expo Router helper or another component), and shares the result. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, and `enabled` (default `true`). `link` is `null` until a link is found, after `clear()`, and when the Expo Router helper already routed to it. Without Expo Router:
+
+```tsx
+const { link, clear } = useDeferredDeepLink({ apiKey: "your-public-api-key" });
+useEffect(() => {
+  if (link) {
+    clear();
+    navigation.navigate("Product", { path: link.path, params: link.queryParams });
+  }
+}, [link]);
+```
 
 ### `getModuleType()` / `isNativeModuleAvailable()`
 

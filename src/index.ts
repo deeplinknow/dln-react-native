@@ -22,6 +22,11 @@ import type {
   ParsedDeepLink,
   ReferrerData,
 } from "./types";
+import {
+  type UseDeferredDeepLinkOptions,
+  type UseDeferredDeepLinkResult,
+  useDeferredDeepLinkFor,
+} from "./use-deferred-deep-link";
 
 // ============================================
 // Module Detection: Expo → TurboModule → Bridge
@@ -147,6 +152,10 @@ export type {
   ReferrerDeeplinkMatch,
 } from "./types";
 export { CONFIDENCE_THRESHOLDS } from "./types";
+export type {
+  UseDeferredDeepLinkOptions,
+  UseDeferredDeepLinkResult,
+} from "./use-deferred-deep-link";
 
 export interface DeepLinkNowConfig {
   /** @deprecated Ignored. Pass the key as the first argument of `initialize`. */
@@ -1021,4 +1030,25 @@ class DeepLinkNow {
   }
 }
 
-export default new DeepLinkNow();
+const deepLinkNow = new DeepLinkNow();
+
+/**
+ * The deferred deep link as React state (RN-31). Runs `checkDeferredDeepLink` once per app
+ * process (initializing first when you pass `apiKey` and the SDK isn't initialized), and
+ * shares that one check with the Expo Router helper. `link` stays set until you call
+ * `clear()`, so you can navigate once the user has signed in.
+ *
+ * ```tsx
+ * const { link, clear } = useDeferredDeepLink({ apiKey: "YOUR_API_KEY" });
+ * useEffect(() => {
+ *   if (link && isSignedIn) { clear(); navigate(link.fullPath); }
+ * }, [link, isSignedIn]);
+ * ```
+ */
+export function useDeferredDeepLink(
+  options?: UseDeferredDeepLinkOptions
+): UseDeferredDeepLinkResult {
+  return useDeferredDeepLinkFor(deepLinkNow, options);
+}
+
+export default deepLinkNow;

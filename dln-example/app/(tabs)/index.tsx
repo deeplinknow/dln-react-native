@@ -1,13 +1,13 @@
 /**
  * DeepLinkNow React Native / Expo example.
  *
- * The whole integration is three calls:
- *   1. DeepLinkNow.initialize(apiKey)          once, at startup
+ * The integration:
+ *   1. app/+native-intent.tsx: createRedirectSystemPath({ apiKey }) initializes the SDK and,
+ *      on the first launch after install, opens the app on the deferred deep link.
+ *   2. useDeferredDeepLink(): a deferred link that arrived after the helper's timeout.
+ *   3. DeepLinkNow.parseDeepLink(url): Universal Links / App Links that open the app.
  *
- * None of these throw: a failure resolves null and the error is in DeepLinkNow.lastError.
- *   2. DeepLinkNow.checkDeferredDeepLink()     once, on first launch after install
- *   3. DeepLinkNow.parseDeepLink(url)          for Universal Links / App Links that open the app
- *
+ * None of these throw: a failure gives null and the error is in DeepLinkNow.lastError.
  * Everything else on this screen is for testing.
  */
 import DeepLinkNow, {
@@ -15,7 +15,9 @@ import DeepLinkNow, {
   DLNError,
   getModuleType,
   type ParsedDeepLink,
+  useDeferredDeepLink,
 } from "@deeplinknow/react-native";
+import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   Button,
@@ -28,9 +30,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// "test_api_key" is DeepLinkNow's demo key (returns sample data). Use your app's key from
-// the dashboard (Dashboard → your app → API keys) to test real links.
-const API_KEY = "test_api_key";
+import { DLN_API_KEY, DLN_CONFIG } from "@/constants/deeplinknow";
 
 // Fingerprint matches below this score are ignored. Off (undefined) by default: the SDK
 // returns the best candidate and you decide using confidenceScore / matchQuality.
@@ -44,8 +44,17 @@ function describeError(e: unknown): string {
 }
 
 export default function HomeScreen() {
-  const [initError, setInitError] = useState<string | null>(null);
-  const [initialized, setInitialized] = useState(false);
+  // Set by mapLink in app/+native-intent.tsx when the app was opened on a DeepLinkNow link.
+  const routed = useLocalSearchParams<{ dln?: string; source?: string }>();
+  // Shares the one check that +native-intent started. It also starts it where
+  // +native-intent doesn't run (web), so it gets the same key and config.
+  const late = useDeferredDeepLink({ apiKey: DLN_API_KEY, config: DLN_CONFIG });
+  const initialized = DeepLinkNow.isInitialized();
+  const initError =
+    !(late.isLoading || initialized) && DeepLinkNow.lastError
+      ? describeError(DeepLinkNow.lastError)
+      : null;
+
   const [minConfidence, setMinConfidence] = useState<number | undefined>(
     undefined
   );
@@ -57,6 +66,15 @@ export default function HomeScreen() {
     null
   );
   const [status, setStatus] = useState<string | null>(null);
+
+  // 2: a deferred link found after +native-intent stopped waiting. A real app would
+  // navigate here, e.g. after sign-in: router.push(late.link.fullPath).
+  useEffect(() => {
+    if (late.link) {
+      setDeferred(late.link);
+      late.clear();
+    }
+  }, [late.link]);
 
   const checkDeferred = useCallback(
     async (force: boolean) => {
@@ -71,25 +89,9 @@ export default function HomeScreen() {
       if (!link && DeepLinkNow.lastError) {
         setDeferredError(describeError(DeepLinkNow.lastError));
       }
-      // In a real app: if (link) router.push(link.fullPath)
     },
     [minConfidence]
   );
-
-  // 1 + 2: initialize, then check for a deferred deep link once (first launch).
-  useEffect(() => {
-    (async () => {
-      const app = await DeepLinkNow.initialize(API_KEY, { enableLogs: true });
-      if (!app) {
-        setInitError(describeError(DeepLinkNow.lastError));
-        return;
-      }
-      setInitialized(true);
-      await checkDeferred(false);
-    })();
-    // Run once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // 3: Universal Links / App Links that open the installed app.
   useEffect(() => {
@@ -130,11 +132,18 @@ export default function HomeScreen() {
         </Section>
 
         <Section title="2. Deferred deep link (first launch)">
+          {routed.dln ? (
+            <Text>
+              Opened by +native-intent on {routed.dln} ({routed.source})
+            </Text>
+          ) : null}
           {deferredError ? (
             <Text style={styles.error}>{deferredError}</Text>
           ) : null}
           {deferred === undefined && !deferredError && (
-            <Text>Not checked yet</Text>
+            <Text>
+              {late.isLoading ? "Checking…" : "Nothing beyond the launch route"}
+            </Text>
           )}
           {deferred === null && <Text>No deferred deep link</Text>}
           {deferred ? (

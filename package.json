@@ -1,17 +1,24 @@
 {
   "name": "@deeplinknow/react-native",
-  "version": "1.2.1",
-  "description": "React Native + Expo SDK for the Deeplink Now deferred deep linking platform",
+  "version": "1.3.0",
+  "description": "DeepLinkNow React Native and Expo SDK: deferred deep links, Universal Links and App Links. Returns the link a user tapped before installing. No attribution, no advertising IDs.",
   "keywords": [
     "react-native",
+    "expo",
     "ios",
     "android",
-    "expo",
     "deep linking",
+    "deep-link",
     "deferred deep linking",
-    "attribution"
+    "deferred-deep-link",
+    "universal-links",
+    "app-links",
+    "expo-router",
+    "firebase-dynamic-links",
+    "dynamic-links",
+    "install-referrer"
   ],
-  "homepage": "https://github.com/deeplinknow/dln-react-native#readme",
+  "homepage": "https://deeplinknow.com/docs/react-native",
   "bugs": {
     "url": "https://github.com/deeplinknow/dln-react-native/issues"
   },
@@ -25,6 +32,10 @@
     ".": {
       "types": "./build/index.d.ts",
       "default": "./build/index.js"
+    },
+    "./expo-router": {
+      "types": "./build/expo-router.d.ts",
+      "default": "./build/expo-router.js"
     },
     "./app.plugin.js": "./app.plugin.js",
     "./package.json": "./package.json"
@@ -40,9 +51,11 @@
     "cpp",
     "plugin/build",
     "app.plugin.js",
+    "expo-router/package.json",
     "*.podspec",
     "expo-module.config.json",
     "react-native.config.js",
+    "CHANGELOG.md",
     "!ios/build",
     "!android/build",
     "!android/gradle",
@@ -141,8 +154,8 @@
     }
   },
   "deeplinknow": {
-    "iosSdkVersion": "1.2.0",
-    "androidSdkVersion": "1.2.0"
+    "iosSdkVersion": "1.3.0",
+    "androidSdkVersion": "1.3.0"
   },
   "expo": {
     "plugin": {

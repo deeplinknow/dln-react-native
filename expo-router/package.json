@@ -1,0 +1,4 @@
+{
+  "main": "../build/expo-router.js",
+  "types": "../build/expo-router.d.ts"
+}
