@@ -4,11 +4,11 @@ All notable changes to `@deeplinknow/react-native`. iOS, Android and React Nativ
 
 ## Unreleased
 
-Not released yet. JavaScript only (no native change). Version to be decided: React Native 1.4.0 alone needs an SDK-84 amendment; otherwise it waits for the next shared minor.
+Not released yet. JavaScript only (no native change). Held for the next shared minor (owner, 2026-10-23, SDK-84): it ships as 1.4.0 with the next feature that changes the native SDKs, not on its own.
 
 ### Features
 
-- **Hold the deferred link until sign-in** (RN-33 to RN-35). `useDeferredDeepLink({ hold: !isSignedIn, onLink })` keeps a found link in memory while `hold` is true (`link` is `null`, the new `heldLink` has it) and calls `onLink(link)` exactly once when `hold` turns false. The link is marked handled before `onLink` runs, so re-renders, other components and the Expo Router helper never open it twice. `clear()` drops a held link.
+- **Hold the deferred link until sign-in** (RN-33 to RN-35). `useDeferredDeepLink({ hold: !isSignedIn, onLink })` keeps a found link in memory while `hold` is true (`link` is `null`, the new `heldLink` has it) and calls `onLink(link)` exactly once when `hold` turns false. The link is marked handled before `onLink` runs, so re-renders, other `onLink` callbacks and the Expo Router helper never open it twice. `clear()` drops a held link. `hold` applies to the hook call that passes it. If `onLink` throws, the SDK logs a `console.warn` (the link stays handled).
 - **`routeDeferredLink: false`** for `createRedirectSystemPath` / `redirectSystemPathWithDeferredLink`: the helper starts the deferred check at launch but doesn't wait for it or route to it, and leaves the link to the hook. A deferred link that `mapLink` maps to `null` also stays available to the hook (documented and tested).
 
 ### Other changes

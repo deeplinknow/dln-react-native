@@ -118,7 +118,7 @@ export default function RootLayout() {
 }
 ```
 
-`onLink` marks the link handled before it runs, so a re-render, a second component or a development reload never opens it twice. To show the link on the sign-in screen ("Sign in to open your invite"), read `heldLink`. To drop it (the user signs out, or declines the invite), call `clear()`. The link lives in memory only: if the app is killed before sign-in, it is gone. On the next launch the native SDK doesn't run the deferred check again (first launch only).
+`onLink` marks the link handled before it runs, so a re-render or a second component's `onLink` never opens it twice. In a development build a reload doesn't either; in Expo Go (no native module) every reload runs the match again and can return the same click. The hold applies to the hook call that passes it: another component calling `useDeferredDeepLink()` without `hold` still gets `link`, so keep the gated hook in one place (the root layout) and route from its `onLink`. If `onLink` throws, the SDK logs a warning and the link stays handled, so route to a screen that is mounted. To show the link on the sign-in screen ("Sign in to open your invite"), read `heldLink`. To drop it (the user signs out, or declines the invite), call `clear()`. The link lives in memory only: if the app is killed before sign-in, it is gone. On the next launch the native SDK doesn't run the deferred check again (first launch only).
 
 To hold only some links, keep `routeDeferredLink` on and return `null` from `mapLink` for the links that need sign-in. The helper routes the others at launch, and a link it didn't route stays available to the hook.
 

@@ -23,12 +23,16 @@ export interface UseDeferredDeepLinkOptions extends DeferredSessionOptions {
    * `heldLink` has it, and `onLink` is not called. The check still runs, so the link is
    * resolved at launch (inside its claim window) and kept in memory for this process. When
    * `hold` turns false the link is delivered. Typically `hold: !isSignedIn`. Default false.
+   * The hold applies to this hook call only: another component calling
+   * `useDeferredDeepLink()` without `hold` still gets the link. Use one gated hook, usually
+   * in the root layout.
    */
   hold?: boolean;
   /**
    * Called once per process with the link when it is available and not held (RN-34). The
    * link is marked handled (like `clear()`) before the call, so no other component, render
-   * or the Expo Router helper delivers it again. Errors it throws are swallowed (SDK-85).
+   * or the Expo Router helper delivers it again. An error it throws is caught and logged
+   * with `console.warn` (SDK-85): the link stays handled, so route somewhere that is ready.
    */
   onLink?: (link: DeferredDeepLink) => void;
 }
@@ -44,8 +48,9 @@ export interface UseDeferredDeepLinkResult {
   /** True until the check has finished. */
   isLoading: boolean;
   /**
-   * The deferred deep link, or null: none found, not finished yet, already handled with
-   * `clear()`, or already routed to by the Expo Router helper.
+   * The deferred deep link, or null: none found, not finished yet, held by this call's
+   * `hold`, already handled with `clear()` or `onLink`, or already routed to by the Expo
+   * Router helper. When you pass `onLink`, use it rather than `link` to navigate.
    */
   link: DeferredDeepLink | null;
 }
@@ -86,8 +91,13 @@ export function useDeferredDeepLinkFor(
     markDeferredLinkHandled();
     try {
       onLink(available);
-    } catch {
-      // The app's callback must not break rendering (SDK-85).
+    } catch (error) {
+      // The app's callback must not break rendering (SDK-85), but the link is gone for this
+      // process, so say why.
+      console.warn(
+        "[DeepLinkNow] onLink threw; the deferred link was already marked handled:",
+        error
+      );
     }
   }, [available, hold]);
 
