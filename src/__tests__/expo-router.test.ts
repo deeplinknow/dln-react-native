@@ -1,6 +1,6 @@
 /**
  * Expo Router integration (`@deeplinknow/react-native/expo-router`) and
- * `useDeferredDeepLink()`: RN-26..RN-32.
+ * `useDeferredDeepLink()`: RN-26..RN-35.
  */
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -579,6 +579,212 @@ describe("RN-31: useDeferredDeepLink", () => {
       isLoading: false,
     });
     expect(sdk.lastError?.code).toBe("network");
+  });
+});
+
+describe("RN-33..35: auth gate (hold the link until sign-in)", () => {
+  beforeEach(() => {
+    silenceConsole();
+    mockReact();
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.dontMock("react");
+  });
+
+  it("RN-33: while hold is true the check still runs, link is null and heldLink has it", async () => {
+    const { mod, native } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    mod.useDeferredDeepLink({ apiKey: KEY, hold: true });
+    await tick();
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(1);
+    const held = mod.useDeferredDeepLink({ apiKey: KEY, hold: true });
+    expect(held).toMatchObject({ link: null, isLoading: false });
+    expect(held.heldLink).toMatchObject({ path: "/products/123" });
+  });
+
+  it("RN-33: a link held through a delayed sign-in is delivered when hold turns false", async () => {
+    const { mod } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    let isSignedIn = false;
+    mod.useDeferredDeepLink({ apiKey: KEY, hold: !isSignedIn });
+    await tick();
+    // The user spends a while on the sign-in screen; re-renders keep holding.
+    await tick(5);
+    expect(mod.useDeferredDeepLink({ hold: !isSignedIn }).link).toBeNull();
+    await tick(5);
+    expect(
+      mod.useDeferredDeepLink({ hold: !isSignedIn }).heldLink
+    ).not.toBeNull();
+    isSignedIn = true;
+    const res = mod.useDeferredDeepLink({ hold: !isSignedIn });
+    expect(res.link).toMatchObject({
+      fullPath: "/products/123?ref=newsletter&code=SAVE20",
+    });
+    expect(res.heldLink).toBeNull();
+    res.clear();
+    expect(mod.useDeferredDeepLink({ hold: false }).link).toBeNull();
+  });
+
+  it("RN-33: clear() while held drops the link: nothing is delivered after sign-in", async () => {
+    const { mod } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    const onLink = jest.fn();
+    mod.useDeferredDeepLink({ apiKey: KEY, hold: true, onLink });
+    await tick();
+    mod.useDeferredDeepLink({ hold: true, onLink }).clear();
+    const after = mod.useDeferredDeepLink({ hold: false, onLink });
+    expect(after).toMatchObject({ link: null, heldLink: null });
+    expect(onLink).not.toHaveBeenCalled();
+  });
+
+  it("RN-33: without hold the hook behaves as in 1.3.0 (heldLink stays null)", async () => {
+    const { mod } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    mod.useDeferredDeepLink({ apiKey: KEY });
+    await tick();
+    const res = mod.useDeferredDeepLink();
+    expect(res.link).toMatchObject({ path: "/products/123" });
+    expect(res.heldLink).toBeNull();
+    // Not consumed by reading it: still there until clear().
+    expect(mod.useDeferredDeepLink().link).not.toBeNull();
+  });
+
+  it("RN-34: onLink is called exactly once, after the gate opens, and marks the link handled", async () => {
+    const { mod, session } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    const onLink = jest.fn();
+    mod.useDeferredDeepLink({ apiKey: KEY, hold: true, onLink });
+    await tick();
+    mod.useDeferredDeepLink({ hold: true, onLink });
+    expect(onLink).not.toHaveBeenCalled();
+
+    mod.useDeferredDeepLink({ hold: false, onLink });
+    // Re-renders and a second component with its own onLink don't deliver it again.
+    mod.useDeferredDeepLink({ hold: false, onLink });
+    const other = jest.fn();
+    mod.useDeferredDeepLink({ hold: false, onLink: other });
+    expect(onLink).toHaveBeenCalledTimes(1);
+    expect(onLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fullPath: "/products/123?ref=newsletter&code=SAVE20",
+      })
+    );
+    expect(other).not.toHaveBeenCalled();
+    expect(session.getDeferredSessionState().handled).toBe(true);
+  });
+
+  it("RN-34 / SDK-85: an onLink that throws never breaks the hook", async () => {
+    const { mod } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    mod.useDeferredDeepLink({ apiKey: KEY, hold: true });
+    await tick();
+    const onLink = jest.fn(() => {
+      throw new Error("navigation not ready");
+    });
+    expect(() => mod.useDeferredDeepLink({ onLink })).not.toThrow();
+    expect(onLink).toHaveBeenCalledTimes(1);
+    expect(mod.useDeferredDeepLink({ onLink }).link).toBeNull();
+  });
+
+  it("RN-35: routeDeferredLink: false starts the check, returns at once and leaves the link to the hook", async () => {
+    let release: (v: unknown) => void = () => {};
+    const { mod, router, native } = load({
+      native: {
+        checkDeferredDeepLink: () =>
+          new Promise((r) => {
+            release = r;
+          }),
+      },
+    });
+    const opts = { apiKey: KEY, routeDeferredLink: false };
+    const started = Date.now();
+    await expect(
+      router.redirectSystemPathWithDeferredLink(
+        { path: ROOT_URL, initial: true },
+        opts
+      )
+    ).resolves.toBe(ROOT_URL);
+    expect(Date.now() - started).toBeLessThan(500);
+    await tick();
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(1);
+
+    release(deferredLink());
+    await tick();
+    // A development reload re-runs the initial redirect: still no routing at launch.
+    await expect(
+      router.redirectSystemPathWithDeferredLink(
+        { path: ROOT_URL, initial: true },
+        opts
+      )
+    ).resolves.toBe(ROOT_URL);
+
+    const onLink = jest.fn();
+    mod.useDeferredDeepLink({ hold: true, onLink });
+    expect(onLink).not.toHaveBeenCalled();
+    mod.useDeferredDeepLink({ hold: false, onLink });
+    mod.useDeferredDeepLink({ hold: false, onLink });
+    expect(onLink).toHaveBeenCalledTimes(1);
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(1);
+  });
+
+  it("RN-35: a link mapLink returns null for stays available to the hook", async () => {
+    const { mod, router } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    await expect(
+      router.redirectSystemPathWithDeferredLink(
+        { path: ROOT_URL, initial: true },
+        { apiKey: KEY, mapLink: () => null }
+      )
+    ).resolves.toBe(ROOT_URL);
+    const onLink = jest.fn();
+    mod.useDeferredDeepLink({ onLink });
+    expect(onLink).toHaveBeenCalledTimes(1);
+  });
+
+  it("RN-35: a link the helper routed at launch is never delivered again by a gated hook", async () => {
+    const { mod, router } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    await expect(
+      router.redirectSystemPathWithDeferredLink(
+        { path: ROOT_URL, initial: true },
+        { apiKey: KEY }
+      )
+    ).resolves.toBe("/products/123?ref=newsletter&code=SAVE20");
+    const onLink = jest.fn();
+    expect(mod.useDeferredDeepLink({ hold: true, onLink }).heldLink).toBeNull();
+    mod.useDeferredDeepLink({ hold: false, onLink });
+    expect(onLink).not.toHaveBeenCalled();
+  });
+
+  it("RN-35 / SDK-85: routeDeferredLink: false with a failing check never rejects", async () => {
+    const { router, mod } = load({
+      native: {
+        checkDeferredDeepLink: async () => {
+          throw Object.assign(new Error("offline"), { code: "network" });
+        },
+      },
+    });
+    await expect(
+      router.redirectSystemPathWithDeferredLink(
+        { path: ROOT_URL, initial: true },
+        { apiKey: KEY, routeDeferredLink: false }
+      )
+    ).resolves.toBe(ROOT_URL);
+    await tick();
+    expect(mod.useDeferredDeepLink({ hold: false })).toMatchObject({
+      link: null,
+      heldLink: null,
+      isLoading: false,
+    });
   });
 });
 

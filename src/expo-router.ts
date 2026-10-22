@@ -66,6 +66,14 @@ export interface RedirectSystemPathOptions extends DeferredSessionOptions {
    */
   mapUniversalLinks?: boolean;
   /**
+   * Route to the deferred link at launch (default true). Set false when the link must wait
+   * for sign-in (RN-33): the helper still starts the check at launch, but returns the
+   * incoming path at once, without waiting, and leaves the link to
+   * `useDeferredDeepLink({ hold: !isSignedIn, onLink })`. To hold only some links, return
+   * null from `mapLink` for them instead: an unrouted link stays available to the hook.
+   */
+  routeDeferredLink?: boolean;
+  /**
    * The longest the first launch waits for `initialize` + `checkDeferredDeepLink`, in
    * milliseconds. Default 3000. On timeout the app starts on the incoming path and the check
    * keeps running; a link found later is delivered by `useDeferredDeepLink()`. Use 0 to never
@@ -202,6 +210,12 @@ export async function redirectSystemPathWithDeferredLink(
       // The link's domains come from init; wait for it, but never longer than timeoutMs.
       await within(ensureSdkInitialized(DeepLinkNow, options), timeoutMs);
       return universalLinkPath(incoming, options) ?? incoming;
+    }
+
+    if (options.routeDeferredLink === false) {
+      // Auth gate (RN-33): resolve the link now, deliver it later through the hook.
+      startDeferredCheck(DeepLinkNow, options).catch(() => null);
+      return incoming;
     }
 
     const result = await within(

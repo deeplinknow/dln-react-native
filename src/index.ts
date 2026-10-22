@@ -1036,13 +1036,15 @@ const deepLinkNow = new DeepLinkNow();
  * The deferred deep link as React state (RN-31). Runs `checkDeferredDeepLink` once per app
  * process (initializing first when you pass `apiKey` and the SDK isn't initialized), and
  * shares that one check with the Expo Router helper. `link` stays set until you call
- * `clear()`, so you can navigate once the user has signed in.
+ * `clear()`. To route only after sign-in, pass `hold: !isSignedIn` (RN-33) and `onLink`,
+ * which is called exactly once when the link is available and not held (RN-34).
  *
  * ```tsx
- * const { link, clear } = useDeferredDeepLink({ apiKey: "YOUR_API_KEY" });
- * useEffect(() => {
- *   if (link && isSignedIn) { clear(); navigate(link.fullPath); }
- * }, [link, isSignedIn]);
+ * useDeferredDeepLink({
+ *   apiKey: "YOUR_API_KEY",
+ *   hold: !isSignedIn,
+ *   onLink: (link) => router.push(link.fullPath),
+ * });
  * ```
  */
 export function useDeferredDeepLink(
