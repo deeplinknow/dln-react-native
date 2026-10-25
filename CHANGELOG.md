@@ -2,7 +2,7 @@
 
 All notable changes to `@deeplinknow/react-native`. iOS, Android and React Native share one major.minor version (SDK-84).
 
-## 1.4.0
+## 1.4.0 (2026-10-25)
 
 Not released yet. Ships as 1.4.0 with iOS and Android 1.4.0 (SDK-84); the version is not bumped yet. The React Native changes below are JavaScript only.
 
