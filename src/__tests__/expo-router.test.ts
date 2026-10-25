@@ -46,7 +46,7 @@ function load(opts: LoadOptions = {}) {
         : { parseDeepLink: nativeParse, ...opts.native },
   });
   const router = require("../expo-router");
-  const session = require("../deferred-session");
+  const session = require("../link-session");
   return { ...loaded, router, session };
 }
 
@@ -93,10 +93,7 @@ describe("Expo Router helper", () => {
 
     it("RN-26: the helper has no runtime dependency on expo-router or React", () => {
       const src = readFileSync(join(ROOT, "src/expo-router.ts"), "utf8");
-      const session = readFileSync(
-        join(ROOT, "src/deferred-session.ts"),
-        "utf8"
-      );
+      const session = readFileSync(join(ROOT, "src/link-session.ts"), "utf8");
       for (const code of [src, session]) {
         expect(code).not.toMatch(/from "expo-router"|require\("expo-router"\)/);
         expect(code).not.toMatch(/from "react"/);

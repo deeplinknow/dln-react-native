@@ -2,6 +2,11 @@
  * `useDeferredDeepLink()` (RN-31): the deferred deep link as React state, for apps without
  * Expo Router, and for Expo Router apps that navigate after sign-in instead of at launch.
  * The hook itself is exported from `index.ts`, bound to the `DeepLinkNow` singleton.
+ *
+ * Built on the link session (`link-session.ts`, SDK-89): the same deferred check, the same
+ * "handled" bookkeeping and the same pending link as `DeepLinkNow.onLink` and
+ * `useDeepLink()`. Its own `hold` / `onLink` keep their 1.3-era semantics (RN-33, RN-34):
+ * deferred links only, `hold` per hook call, `onLink` at most once per process.
  */
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
@@ -12,7 +17,7 @@ import {
   markDeferredLinkHandled,
   startDeferredCheck,
   subscribeDeferredSession,
-} from "./deferred-session";
+} from "./link-session";
 import type { DeferredDeepLink } from "./types";
 
 export interface UseDeferredDeepLinkOptions extends DeferredSessionOptions {

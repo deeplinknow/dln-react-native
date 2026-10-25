@@ -9,19 +9,35 @@ import {
   normalizeHost,
   parseDeepLinkJS,
   qualityForScore,
+  stripDlnFragment,
   toLegacyParameters,
 } from "./deeplink";
 import { codeForStatus, DLNError, toDLNError } from "./errors";
+import {
+  clearPendingLink,
+  directLinkFromUrl,
+  getPendingLink,
+  getPendingLinks,
+  type OnLinkOptions,
+  releasePendingLink,
+  subscribeLinks,
+} from "./link-session";
 import type {
   DeferredDeepLink,
   DeferredDeepLinkOptions,
   DLNAppInfo,
+  DLNLink,
   Fingerprint,
   InitResponse,
   MatchResponse,
   ParsedDeepLink,
   ReferrerData,
 } from "./types";
+import {
+  type UseDeepLinkOptions,
+  type UseDeepLinkResult,
+  useDeepLinkFor,
+} from "./use-deep-link";
 import {
   type UseDeferredDeepLinkOptions,
   type UseDeferredDeepLinkResult,
@@ -130,6 +146,7 @@ export function isNativeModuleAvailable(): boolean {
 
 export type { DLNErrorCode } from "./errors";
 export { DLN_ERROR_CODES, DLNError } from "./errors";
+export type { OnLinkOptions } from "./link-session";
 export type {
   ConfidenceLevel,
   DeeplinkMatch,
@@ -137,6 +154,9 @@ export type {
   DeferredDeepLinkOptions,
   DeferredDeepLinkSource,
   DLNAppInfo,
+  DLNLink,
+  DLNLinkSource,
+  DLNLinkType,
   Fingerprint,
   FingerprintMatch,
   InitResponse,
@@ -152,6 +172,7 @@ export type {
   ReferrerDeeplinkMatch,
 } from "./types";
 export { CONFIDENCE_THRESHOLDS } from "./types";
+export type { UseDeepLinkOptions, UseDeepLinkResult } from "./use-deep-link";
 export type {
   UseDeferredDeepLinkOptions,
   UseDeferredDeepLinkResult,
@@ -221,6 +242,8 @@ class DeepLinkNow {
   private fallbackDomains: Set<string> | null = null;
   private fallbackDeferredDone = false;
   private fallbackInFlight: Promise<DeferredDeepLink | null> | null = null;
+  /** The running non-`force` `checkDeferredDeepLink`, shared by concurrent calls (SDK-91). */
+  private deferredInFlight: Promise<DeferredDeepLink | null> | null = null;
   private degradedWarned = false;
   private readonly installTime: string = new Date().toISOString();
 
@@ -384,6 +407,16 @@ class DeepLinkNow {
     return publicPromise;
   }
 
+  /**
+   * Resolves once no `initialize` is in flight (immediately when none was started). Never
+   * rejects. Used by the link session before it applies the host rule to a launch URL.
+   */
+  async waitForInitialization(): Promise<void> {
+    if (this.publicInitPromise) {
+      await this.publicInitPromise;
+    }
+  }
+
   /** Whether a successful initialization has completed. */
   isInitialized(): boolean {
     if (this.initError) {
@@ -503,10 +536,33 @@ class DeepLinkNow {
    * link, or null when there is none. iOS: pasteboard → fingerprint. Android: install
    * referrer → fingerprint. Never rejects (SDK-85): a failure (offline, invalid key, not
    * initialized, …) also resolves null, is logged as a warning and is kept in `lastError`.
+   *
+   * A call made while another one (without `force`) is running shares it, so `onLink`,
+   * `useDeferredDeepLink()` and a direct call in the same app run the chain once (SDK-91).
    */
-  async checkDeferredDeepLink(
+  checkDeferredDeepLink(
     // JS callers may pass null.
     options: DeferredDeepLinkOptions | null = {}
+  ): Promise<DeferredDeepLink | null> {
+    if (options?.force === true) {
+      return this.checkDeferredDeepLinkNow(options);
+    }
+    if (this.deferredInFlight) {
+      return this.deferredInFlight;
+    }
+    const run = this.checkDeferredDeepLinkNow(options);
+    this.deferredInFlight = run;
+    const clear = () => {
+      if (this.deferredInFlight === run) {
+        this.deferredInFlight = null;
+      }
+    };
+    run.then(clear, clear);
+    return run;
+  }
+
+  private async checkDeferredDeepLinkNow(
+    options: DeferredDeepLinkOptions | null
   ): Promise<DeferredDeepLink | null> {
     try {
       const link = await this.runCheckDeferredDeepLink(options);
@@ -553,7 +609,12 @@ class DeepLinkNow {
         "Native module returned an unexpected deferred deep link"
       );
     }
-    const link: DeferredDeepLink = { ...res };
+    // SDK-92: a clipboard URL can carry `#dln=<click id>`; it is never part of the link.
+    const link: DeferredDeepLink = {
+      ...res,
+      url: stripDlnFragment(res.url),
+      fullPath: stripDlnFragment(res.fullPath),
+    };
     if (link.deeplinkId && link.id === undefined) {
       link.id = link.deeplinkId;
     }
@@ -761,8 +822,10 @@ class DeepLinkNow {
     return {
       path: r.path,
       queryParams,
-      fullPath: typeof r.fullPath === "string" ? r.fullPath : r.path,
-      url: typeof r.url === "string" ? r.url : url,
+      fullPath: stripDlnFragment(
+        typeof r.fullPath === "string" ? r.fullPath : r.path
+      ),
+      url: stripDlnFragment(typeof r.url === "string" ? r.url : url),
       parameters: toLegacyParameters(queryParams),
     };
   }
@@ -777,6 +840,158 @@ class DeepLinkNow {
     } catch {
       return false;
     }
+  }
+
+  // ============================================
+  // One link object for every open (SDK-86..SDK-90)
+  // ============================================
+
+  /**
+   * Registers a handler that receives every link as a `DLNLink` (SDK-86): the first-launch
+   * deferred link (`type: "deferred"`, from the same single check as
+   * `checkDeferredDeepLink`) and every direct open (`type: "direct"`): the launch URL from
+   * `Linking.getInitialURL()` and later `url` events, on the app's DLN domains or its URL
+   * scheme. The SDK reads `Linking` itself; don't forward URLs to it (SDK-87). A link that
+   * arrived before the handler was registered is replayed once. The same open is never
+   * delivered twice (SDK-88). Returns a function that unregisters the handler.
+   *
+   * `options`: `apiKey` / `config` (initialize when not initialized yet), `minConfidence`,
+   * `useClipboard` (passed to the deferred check), `hold` (keep links in `pendingLink` until
+   * `releasePendingLink()`, SDK-89), `resolve` (look direct opens up on the server, SDK-90),
+   * `schemes` (your custom URL schemes; default: the Expo config's `scheme`, SDK-87).
+   * The check and the `Linking` listener start once per process, with the options of the
+   * first registration.
+   */
+  onLink(
+    handler: (link: DLNLink) => void,
+    // JS callers may pass null.
+    options: OnLinkOptions | null = {}
+  ): () => void {
+    if (typeof handler !== "function") {
+      this.warn("onLink() requires a handler function");
+      return () => undefined;
+    }
+    const subscription = subscribeLinks(this, handler, options ?? {});
+    return subscription.unsubscribe;
+  }
+
+  /**
+   * The first link not delivered yet (SDK-89): held by `hold: true`, or waiting for a
+   * handler. The first of `pendingLinks` (deferred first); null when there is none.
+   */
+  get pendingLink(): DLNLink | null {
+    return getPendingLink();
+  }
+
+  /**
+   * Every link not delivered yet (SDK-89): the latest of each kind, one deferred and one
+   * direct, deferred first. Read-only; empty when there is none.
+   */
+  get pendingLinks(): readonly DLNLink[] {
+    return getPendingLinks();
+  }
+
+  /**
+   * Delivers the pending link to every `onLink` handler and ends the hold, so later links go
+   * straight to the handlers (SDK-89). Returns false when nothing is pending or no handler is
+   * registered (a pending link then stays pending).
+   */
+  releasePendingLink(): boolean {
+    return releasePendingLink();
+  }
+
+  /** Drops the pending link; it is never delivered in this process. The hold stays on (SDK-89). */
+  clearPendingLink(): void {
+    clearPendingLink();
+  }
+
+  /**
+   * Looks a direct-open URL up on the server (`GET /api/v1/sdk/resolve`, SDK-90) and returns
+   * its `DLNLink` with `deeplinkId`, `targetUrl`, `campaignId` and `metadata` filled in. A
+   * 404, a timeout (the configured `timeoutMs`), any error, a missing API key or a scheme URL
+   * return the link unresolved. Null when the URL is not a link on the app's domains or
+   * scheme. Never rejects.
+   */
+  async resolveLink(url: string): Promise<DLNLink | null> {
+    try {
+      await this.waitForInitialization();
+      const link = directLinkFromUrl(this, url);
+      if (!link || link.source === "scheme") {
+        return link;
+      }
+      return await this.resolveDirectLink(link);
+    } catch {
+      return null;
+    }
+  }
+
+  private async resolveDirectLink(link: DLNLink): Promise<DLNLink> {
+    if (!this.apiKey) {
+      this.log("resolveLink: not initialized, link left unresolved");
+      return link;
+    }
+    const timeoutMs = Math.max(
+      1,
+      Number(this.config.timeoutMs) || DEFAULTS.timeoutMs
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), timeoutMs);
+    });
+    try {
+      const body = await Promise.race([this.fetchResolve(link), deadline]);
+      const dl = (body as { deeplink?: unknown } | null)?.deeplink;
+      if (!dl || typeof dl !== "object") {
+        return link;
+      }
+      const d = dl as Partial<{
+        campaign_id: string | null;
+        id: string;
+        // biome-ignore lint/suspicious/noExplicitAny: server metadata is arbitrary JSON, typed like DeferredDeepLink.metadata.
+        metadata: Record<string, any>;
+        target_url: string;
+      }>;
+      const resolved: DLNLink = { ...link };
+      if (typeof d.id === "string") {
+        resolved.deeplinkId = d.id;
+        resolved.id = d.id;
+      }
+      if (typeof d.target_url === "string") {
+        resolved.targetUrl = d.target_url;
+      }
+      if (typeof d.campaign_id === "string") {
+        resolved.campaignId = d.campaign_id;
+      }
+      if (d.metadata && typeof d.metadata === "object") {
+        resolved.metadata = d.metadata;
+      }
+      this.log(`resolveLink: ${link.fullPath} → ${resolved.deeplinkId}`);
+      return resolved;
+    } catch (e) {
+      this.log(
+        "resolveLink: left unresolved:",
+        (e as Error | null | undefined)?.message
+      );
+      return link;
+    } finally {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  /** One `GET /resolve` (no retries: SDK-90 bounds it by the timeout). Null on a non-200. */
+  private async fetchResolve(link: DLNLink): Promise<unknown> {
+    const url = `${this.baseUrl()}/api/v1/sdk/resolve?path=${encodeURIComponent(link.fullPath)}`;
+    const res = await this.fetchWithTimeout(url, {
+      method: "GET",
+      headers: { "x-api-key": this.apiKey ?? "" },
+    });
+    if (res.status !== 200) {
+      this.log(`resolveLink: HTTP ${res.status}, link left unresolved`);
+      return null;
+    }
+    return JSON.parse(await res.text());
   }
 
   // ============================================
@@ -1051,6 +1266,23 @@ export function useDeferredDeepLink(
   options?: UseDeferredDeepLinkOptions
 ): UseDeferredDeepLinkResult {
   return useDeferredDeepLinkFor(deepLinkNow, options);
+}
+
+/**
+ * Every link, deferred or direct, as React state (SDK-89), over `DeepLinkNow.onLink`:
+ * `{ link, pendingLink, isLoading, release, clear }`. `link` is the latest `DLNLink`
+ * delivered to this hook. With `hold: !isSignedIn`, links wait in `pendingLink` until the
+ * user signs in, then arrive in `link`.
+ *
+ * ```tsx
+ * const { link, pendingLink } = useDeepLink({ apiKey: "YOUR_API_KEY", hold: !isSignedIn });
+ * useEffect(() => {
+ *   if (link) router.push(link.fullPath);
+ * }, [link]);
+ * ```
+ */
+export function useDeepLink(options?: UseDeepLinkOptions): UseDeepLinkResult {
+  return useDeepLinkFor(deepLinkNow, options);
 }
 
 export default deepLinkNow;

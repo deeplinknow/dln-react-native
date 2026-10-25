@@ -289,12 +289,82 @@ export function parseDeepLinkJS(
       path: parts.path,
       queryParams,
       fullPath: parts.fullPath,
-      url: (url as string).trim(),
+      url: stripDlnFragment((url as string).trim()),
       parameters: toLegacyParameters(queryParams),
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * SDK-92: removes a `dln` fragment parameter (`#dln=<click id>`, added by the link page to
+ * the URL it copies) from a URL. Other fragment parameters are kept; a URL without one is
+ * returned unchanged.
+ */
+export function stripDlnFragment(url: string): string {
+  const hash = url.indexOf("#");
+  if (hash === -1) {
+    return url;
+  }
+  const pieces = url.slice(hash + 1).split("&");
+  const kept = pieces.filter((piece) => !/^dln(=|$)/.test(piece));
+  if (kept.length === pieces.length) {
+    return url;
+  }
+  const base = url.slice(0, hash);
+  const rest = kept.filter((piece) => piece !== "");
+  return rest.length ? `${base}#${rest.join("&")}` : base;
+}
+
+const SCHEME_URL = /^([a-zA-Z][a-zA-Z0-9+.-]*):(\S*)$/;
+
+/**
+ * Parses a URL on the app's own scheme (SDK-87): `myapp://products/1?x=1`,
+ * `myapp:///products/1` and `myapp:products/1` all give `fullPath` `/products/1?x=1`-style
+ * results (the "host" is part of the path, as in Expo Router). Expo Go / dev-client URLs
+ * (`exp://…/--/products/1`) use the part after `/--/`. Returns null for http(s), for an
+ * Expo URL without `/--/`, and for the bare root (`myapp://`, `myapp:///`), which is a launch
+ * without a link. Nothing is decoded; the fragment is not part of the path.
+ */
+export function parseSchemeLink(url: unknown): ParsedDeepLink | null {
+  if (typeof url !== "string") {
+    return null;
+  }
+  const trimmed = url.trim();
+  const m = SCHEME_URL.exec(trimmed);
+  if (!m) {
+    return null;
+  }
+  const [, rawScheme, afterScheme] = m;
+  const scheme = rawScheme.toLowerCase();
+  if (scheme === "http" || scheme === "https") {
+    return null;
+  }
+  let rest = afterScheme;
+  const hash = rest.indexOf("#");
+  if (hash !== -1) {
+    rest = rest.slice(0, hash);
+  }
+  if (scheme === "exp" || scheme === "exps" || scheme.startsWith("exp+")) {
+    const expoPath = rest.indexOf("/--/");
+    if (expoPath === -1) {
+      return null;
+    }
+    rest = rest.slice(expoPath + 4);
+  }
+  const fullPath = `/${rest.replace(/^\/+/, "")}`;
+  if (fullPath === "/" || fullPath === "/?") {
+    return null;
+  }
+  const queryParams = parseQueryParams(queryFromFullPath(fullPath));
+  return {
+    path: pathFromFullPath(fullPath),
+    queryParams,
+    fullPath,
+    url: stripDlnFragment(trimmed),
+    parameters: toLegacyParameters(queryParams),
+  };
 }
 
 // ---------------------------------------------------------------------------

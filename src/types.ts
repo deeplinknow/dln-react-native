@@ -36,6 +36,34 @@ export interface DeferredDeepLink {
   url: string;
 }
 
+/** How a `DLNLink` reached the app (SDK-86). */
+export type DLNLinkType = "deferred" | "direct";
+
+/**
+ * Where a `DLNLink` came from: the deferred sources (`referrer`, `clipboard`, `fingerprint`),
+ * or how a direct open arrived (`universalLink` on iOS, `appLink` on Android, `scheme` for
+ * the app's URL scheme).
+ */
+export type DLNLinkSource =
+  | DeferredDeepLinkSource
+  | "universalLink"
+  | "appLink"
+  | "scheme";
+
+/**
+ * One link object for every open (SDK-86): what `DeepLinkNow.onLink` and `useDeepLink()`
+ * deliver, whether the link arrived after an install (`type: "deferred"`) or opened the
+ * installed app (`type: "direct"`). Every `DeferredDeepLink` field, same names and
+ * meanings. A direct open has `confidenceScore` 100 and `matchQuality` "HIGH", and no
+ * server fields unless it was resolved (`resolve: true`, SDK-90). For a `scheme` open, `url`
+ * is the URL as received (`myapp://products/1`), and `path` / `fullPath` are everything after
+ * the scheme (`/products/1`).
+ */
+export interface DLNLink extends Omit<DeferredDeepLink, "source"> {
+  source: DLNLinkSource;
+  type: DLNLinkType;
+}
+
 export interface DeferredDeepLinkOptions {
   /** Ignore the "already checked" first-launch flag. */
   force?: boolean;

@@ -9,9 +9,34 @@
 export type Flavor = "expo" | "turbo" | "bridge" | "none";
 
 export interface LoadOptions {
+  /** The `scheme` in the Expo config (`expo-constants`); undefined = no Expo config. */
+  expoScheme?: string | string[];
   flavor?: Flavor;
+  /** What `Linking.getInitialURL()` resolves (default null), or a promise of it. */
+  initialUrl?: string | null | Promise<string | null>;
   native?: Record<string, any>;
   os?: "ios" | "android";
+}
+
+/** A fake `Linking`: `emit(url)` fires a `url` event like the OS does. */
+export function createLinkingMock(
+  initialUrl: string | null | Promise<string | null> = null
+) {
+  const handlers = new Set<(event: { url: string }) => void>();
+  return {
+    getInitialURL: jest.fn(() => Promise.resolve(initialUrl)),
+    addEventListener: jest.fn(
+      (_type: string, handler: (event: { url: string }) => void) => {
+        handlers.add(handler);
+        return { remove: () => handlers.delete(handler) };
+      }
+    ),
+    emit(url: string) {
+      for (const handler of handlers) {
+        handler({ url });
+      }
+    },
+  };
 }
 
 export const APP_INFO = {
@@ -220,6 +245,7 @@ export function loadSdk(opts: LoadOptions = {}) {
   const flavor: Flavor = opts.flavor ?? "expo";
   const os = opts.os ?? "ios";
   const native = flavor === "none" ? null : createNativeMock(opts.native);
+  const linking = createLinkingMock(opts.initialUrl ?? null);
 
   jest.resetModules();
 
@@ -234,6 +260,15 @@ export function loadSdk(opts: LoadOptions = {}) {
       throw new Error(`Cannot find native module '${name}'`);
     }),
   }));
+
+  jest.doMock(
+    "expo-constants",
+    () =>
+      opts.expoScheme === undefined
+        ? { default: { expoConfig: null } }
+        : { default: { expoConfig: { scheme: opts.expoScheme } } },
+    { virtual: true }
+  );
 
   jest.doMock("react-native", () => ({
     Platform: {
@@ -259,13 +294,19 @@ export function loadSdk(opts: LoadOptions = {}) {
     Dimensions: {
       get: () => ({ width: 393, height: 852, scale: 3 }),
     },
+    Linking: linking,
   }));
 
   (global as any).__turboModuleProxy =
     flavor === "turbo" ? () => null : undefined;
 
   const mod = require("../../index");
-  return { sdk: mod.default, mod, native: native as Record<string, jest.Mock> };
+  return {
+    sdk: mod.default,
+    mod,
+    native: native as Record<string, jest.Mock>,
+    linking,
+  };
 }
 
 export function silenceConsole() {

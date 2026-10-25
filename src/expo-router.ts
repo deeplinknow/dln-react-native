@@ -16,15 +16,16 @@
  * This module does not import `expo-router`; it only implements the function Expo Router
  * looks for.
  */
+import DeepLinkNow from "./index";
 import {
+  claimDirectOpen,
   type DeferredSessionOptions,
   ensureSdkInitialized,
   getDeferredSessionState,
   markDeferredLinkHandled,
   skipDeferredCheck,
   startDeferredCheck,
-} from "./deferred-session";
-import DeepLinkNow from "./index";
+} from "./link-session";
 import type { QueryParams } from "./types";
 
 /** What Expo Router passes to `redirectSystemPath`. */
@@ -190,6 +191,10 @@ function incomingPath(event: unknown): string {
  * - Any other URL: returned unchanged.
  *
  * Never throws or rejects: on any failure or timeout it returns the incoming path.
+ *
+ * Every URL it sees (other than a launch without a link) is claimed in the link session:
+ * Expo Router navigates to it, so `DeepLinkNow.onLink` / `useDeepLink()` don't deliver the
+ * same open a second time (SDK-88).
  */
 export async function redirectSystemPathWithDeferredLink(
   event: NativeIntentEvent,
@@ -198,6 +203,10 @@ export async function redirectSystemPathWithDeferredLink(
   const incoming = incomingPath(event);
   try {
     const timeoutMs = resolveTimeout(options.timeoutMs);
+    const initial = event.initial === true;
+    if (!(initial && isLaunchWithoutLink(incoming))) {
+      claimDirectOpen(incoming, initial);
+    }
     if (!event.initial) {
       return universalLinkPath(incoming, options) ?? incoming;
     }

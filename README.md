@@ -83,7 +83,33 @@ Using Expo Router? Use the [Expo Router](#expo-router) helper instead: it opens 
 
 None of these calls throw or reject, so no `try`/`catch` is needed. A failure resolves `null`, is logged as a warning, and is kept in `DeepLinkNow.lastError` (see [Errors](#errors)).
 
-For links that open an already-installed app (Universal Links / App Links), use React Native's `Linking` and `parseDeepLink`, so deferred and direct opens route the same way:
+### One handler for every open (1.4.0, unreleased)
+
+`onLink` hands your app the same object, through the same handler, whether the link arrived after an install or opened the installed app (a Universal Link, an App Link or your URL scheme). The SDK reads `Linking.getInitialURL()` and `url` events itself, so there is no `Linking` code to write:
+
+```ts
+import DeepLinkNow from "@deeplinknow/react-native";
+
+const unsubscribe = DeepLinkNow.onLink(
+  (link) => {
+    // link.type: "deferred" (first launch after install) or "direct" (the app was opened by the link)
+    // link.source: "referrer" | "clipboard" | "fingerprint" | "universalLink" | "appLink" | "scheme"
+    navigate(link.path, link.queryParams);
+  },
+  { apiKey: "your-public-api-key" }
+);
+```
+
+- Registering the handler starts the first-launch deferred check (the same single check as `checkDeferredDeepLink()`, so calling both doesn't run it twice).
+- A link that arrived before you registered is handed to the first handler once.
+- The same open is never delivered twice: the same URL again within 3 seconds (a cold-start URL that the OS also sends as a `url` event, or a link the [Expo Router](#expo-router) helper already routed) is one open.
+- Custom-scheme links (`myapp://products/1`) count when you list the scheme in `schemes: ["myapp"]`. Without a list, Expo apps use the `scheme` from the Expo config; bare React Native apps need the list.
+- `hold: true` keeps links in `DeepLinkNow.pendingLink` until you call `DeepLinkNow.releasePendingLink()`, which delivers them and ends the hold, or `clearPendingLink()`, which drops them and keeps holding. See [After sign-in](#after-sign-in).
+- `resolve: true` looks direct opens up on the server (for links imported from Firebase Dynamic Links, whose short codes mean nothing without a lookup). It adds one request per open, bounded by `timeoutMs`; a miss or a timeout delivers the link unresolved.
+
+In a React component, `useDeepLink()` gives you the same thing as state: `{ link, pendingLink, pendingLinks, isLoading, release, clear }`.
+
+Before 1.4.0, use `Linking` and `parseDeepLink` for direct opens; that keeps working:
 
 ```ts
 import { Linking } from "react-native";
@@ -203,6 +229,32 @@ To hold only some links, keep `routeDeferredLink` on and return `null` from `map
 
 The 1.3.0 pattern (`if (link && isSignedIn) { clear(); router.push(link.fullPath); }` in an effect) still works.
 
+#### With `useDeepLink()` (1.4.0, unreleased)
+
+`useDeepLink()` does the same over `onLink`, and returns the link as state. Keep `routeDeferredLink: false` in `app/+native-intent.tsx` as above:
+
+```tsx
+// app/_layout.tsx
+import { useDeepLink } from "@deeplinknow/react-native";
+import { Stack, useRouter } from "expo-router";
+import { useEffect } from "react";
+
+export default function RootLayout() {
+  const { isSignedIn } = useAuth(); // your auth
+  const router = useRouter();
+  const { link, pendingLink } = useDeepLink({ hold: !isSignedIn });
+
+  useEffect(() => {
+    if (link) router.push(link.fullPath); // a new object for every link, delivered once
+  }, [link]);
+
+  // On the sign-in screen, `pendingLink` can say "Sign in to open your invite".
+  return <Stack />;
+}
+```
+
+While `hold` is true a new link waits in `pendingLink`; when the user signs in it moves to `link`, once. `release()` delivers it early and ends the hold, and `clear()` drops it while still holding (on sign-out, or when the user declines the invite). In an Expo Router app, the router opens Universal Links, App Links and your custom-scheme links itself through `+native-intent`, so the helper marks those as handled and `useDeepLink()` doesn't deliver them a second time. Protect those routes with your layout's auth redirect as usual.
+
 ## API
 
 The default export is a singleton.
@@ -243,6 +295,8 @@ The one call. It runs the platform chain and stops at the first step that finds 
 |---|---|---|
 | iOS | Pasteboard: the landing page copied the link before sending the user to the App Store (exact) | Fingerprint match (best effort) |
 | Android | Play Install Referrer (exact) | Fingerprint match (best effort) |
+
+On iOS, from DeepLinkNow iOS SDK 1.4.0 (which React Native 1.4.0 will pin), a pasteboard link that carries the click's id (`#dln=<id>`, added by the link page) is claimed on the server before it is returned: a stale or already-claimed link is skipped and the chain moves on to fingerprinting. The fragment is never part of the returned link.
 
 It does the work once per install. After a definitive answer (a link, or nothing found), later calls resolve `null` without touching the network, clipboard or referrer, unless you pass `force: true`. Errors (offline, 5xx, not initialized, …) also resolve `null`, never reject, and do not mark the check as done, so the next call tries again. The error is in `DeepLinkNow.lastError`.
 
@@ -346,6 +400,24 @@ useEffect(() => {
   }
 }, [link]);
 ```
+
+### `onLink(handler, options?): () => void` (1.4.0, unreleased)
+
+Registers `handler(link: DLNLink)` for every link, deferred or direct (see [One handler for every open](#one-handler-for-every-open-140-unreleased)), and returns a function that unregisters it. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, `hold` (default `false`), `resolve` (default `false`), `schemes` (your custom URL schemes; default: the Expo config's `scheme`; system schemes such as `mailto` never count). The deferred check and the `Linking` listener start once per app process, with the options of the first registration. A handler that throws is logged with `console.warn`; the link counts as delivered.
+
+`DLNLink` has every `DeferredDeepLink` field plus `type` (`"deferred"` or `"direct"`) and a wider `source` (`"universalLink"` on iOS, `"appLink"` on Android, `"scheme"` for your URL scheme). A direct open has `confidenceScore: 100` and `matchQuality: "HIGH"`, and no server fields unless it was resolved. For a scheme URL such as `myapp://products/1?x=1`, `path` is `/products/1` (the host is part of the path, as in Expo Router) and `url` is the URL as received. A `#dln=…` fragment parameter is never part of `url` or `fullPath`.
+
+### `pendingLinks`, `pendingLink`, `releasePendingLink()`, `clearPendingLink()` (1.4.0, unreleased)
+
+`pendingLinks` is a read-only array of the links not delivered yet (held by `hold: true`, or waiting for a handler): the latest of each kind, the deferred link first. `pendingLink` is its first element, or `null`. `releasePendingLink()` delivers it to every handler and ends the hold, so later links go straight to the handlers; it returns `false` when there was nothing to deliver or no handler. `clearPendingLink()` drops it and keeps the hold on.
+
+### `resolveLink(url): Promise<DLNLink | null>` (1.4.0, unreleased)
+
+Looks a direct-open URL up on the server (`GET /api/v1/sdk/resolve`) and returns its `DLNLink` with `deeplinkId`, `targetUrl`, `campaignId` and `metadata` filled in. A 404, a timeout (`timeoutMs`) or an error returns the link unresolved; `null` means the URL is not a link on your domains or scheme. Never rejects.
+
+### `useDeepLink(options?): { link, pendingLink, pendingLinks, isLoading, release, clear }` (1.4.0, unreleased)
+
+A React hook (named export) over `onLink`. `link` is the latest `DLNLink` delivered to this hook; `pendingLinks` the links waiting while `hold` is true (deferred first) and `pendingLink` the first of them; `isLoading` is true while the first-launch check or the launch URL is being worked out. `release()` is `releasePendingLink()` (delivers and ends the hold until `hold` changes again) and `clear()` is `clearPendingLink()` (drops it, keeps holding, and sets `link` back to `null`). Options: those of `onLink`, plus `enabled` (default `true`). Change `hold` freely (`hold: !isSignedIn`): turning it off delivers what is pending.
 
 ### `getModuleType()` / `isNativeModuleAvailable()`
 
