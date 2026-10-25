@@ -44,7 +44,7 @@ npm install @deeplinknow/react-native
 cd ios && pod install
 ```
 
-If `pod install` (or `npx expo prebuild`) says no spec satisfies `DeepLinkNow (~> 1.3.0)`, your local CocoaPods spec cache is older than the release. Run `cd ios && pod install --repo-update` once.
+If `pod install` (or `npx expo prebuild`) says no spec satisfies `DeepLinkNow (~> 1.4.0)`, your local CocoaPods spec cache is older than the release. Run `cd ios && pod install --repo-update` once.
 
 Autolinking picks the right native module (TurboModule on the new architecture, bridge module on the old one). Add the link domains by hand:
 
@@ -83,7 +83,7 @@ Using Expo Router? Use the [Expo Router](#expo-router) helper instead: it opens 
 
 None of these calls throw or reject, so no `try`/`catch` is needed. A failure resolves `null`, is logged as a warning, and is kept in `DeepLinkNow.lastError` (see [Errors](#errors)).
 
-### One handler for every open (1.4.0, unreleased)
+### One handler for every open (1.4.0)
 
 `onLink` hands your app the same object, through the same handler, whether the link arrived after an install or opened the installed app (a Universal Link, an App Link or your URL scheme). The SDK reads `Linking.getInitialURL()` and `url` events itself, so there is no `Linking` code to write:
 
@@ -190,7 +190,7 @@ To add your own rewrites, call `redirectSystemPathWithDeferredLink(event, option
 
 ### After sign-in
 
-A deferred link usually arrives before the user has an account: they tapped an invite, installed the app, and now see your sign-in screen. If the linked screen needs a signed-in user, hold the link until sign-in finishes, then open it once. (Unreleased: `hold`, `onLink`, `heldLink` and `routeDeferredLink` ship in the next minor version.)
+A deferred link usually arrives before the user has an account: they tapped an invite, installed the app, and now see your sign-in screen. If the linked screen needs a signed-in user, hold the link until sign-in finishes, then open it once. (`hold`, `onLink`, `heldLink` and `routeDeferredLink` are new in 1.4.0.)
 
 1. In `app/+native-intent.tsx`, set `routeDeferredLink: false`. The helper still starts the check at launch (so the link is found inside its 1-hour claim window), but it starts the app at once and doesn't route to the link.
 2. In the root layout, pass `hold: !isSignedIn` and `onLink` to `useDeferredDeepLink()`. While `hold` is true the link is kept in memory (`link` is `null`, `heldLink` has it). When `hold` turns false, `onLink` is called exactly once.
@@ -229,7 +229,7 @@ To hold only some links, keep `routeDeferredLink` on and return `null` from `map
 
 The 1.3.0 pattern (`if (link && isSignedIn) { clear(); router.push(link.fullPath); }` in an effect) still works.
 
-#### With `useDeepLink()` (1.4.0, unreleased)
+#### With `useDeepLink()` (1.4.0)
 
 `useDeepLink()` does the same over `onLink`, and returns the link as state. Keep `routeDeferredLink: false` in `app/+native-intent.tsx` as above:
 
@@ -389,7 +389,7 @@ The host rule used by `parseDeepLink` and `checkClipboard`.
 
 ### `useDeferredDeepLink(options?): { link, heldLink, isLoading, clear }`
 
-A React hook (named export) for the deferred deep link. It runs `checkDeferredDeepLink()` once per app process, on mount, unless it already ran (from the Expo Router helper or another component), and shares the result. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, `enabled` (default `true`), and, unreleased, `hold` (default `false`) and `onLink` (see [After sign-in](#after-sign-in)). `link` is `null` until a link is found, while `hold` is true (then `heldLink` has it), after `clear()`, and when the link was already handled (routed by the Expo Router helper, or passed to `onLink`). Without Expo Router:
+A React hook (named export) for the deferred deep link. It runs `checkDeferredDeepLink()` once per app process, on mount, unless it already ran (from the Expo Router helper or another component), and shares the result. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, `enabled` (default `true`), and, since 1.4.0, `hold` (default `false`) and `onLink` (see [After sign-in](#after-sign-in)). `link` is `null` until a link is found, while `hold` is true (then `heldLink` has it), after `clear()`, and when the link was already handled (routed by the Expo Router helper, or passed to `onLink`). Without Expo Router:
 
 ```tsx
 const { link, clear } = useDeferredDeepLink({ apiKey: "your-public-api-key" });
@@ -401,21 +401,21 @@ useEffect(() => {
 }, [link]);
 ```
 
-### `onLink(handler, options?): () => void` (1.4.0, unreleased)
+### `onLink(handler, options?): () => void` (1.4.0)
 
-Registers `handler(link: DLNLink)` for every link, deferred or direct (see [One handler for every open](#one-handler-for-every-open-140-unreleased)), and returns a function that unregisters it. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, `hold` (default `false`), `resolve` (default `false`), `schemes` (your custom URL schemes; default: the Expo config's `scheme`; system schemes such as `mailto` never count). The deferred check and the `Linking` listener start once per app process, with the options of the first registration. A handler that throws is logged with `console.warn`; the link counts as delivered.
+Registers `handler(link: DLNLink)` for every link, deferred or direct (see [One handler for every open](#one-handler-for-every-open-140)), and returns a function that unregisters it. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, `hold` (default `false`), `resolve` (default `false`), `schemes` (your custom URL schemes; default: the Expo config's `scheme`; system schemes such as `mailto` never count). The deferred check and the `Linking` listener start once per app process, with the options of the first registration. A handler that throws is logged with `console.warn`; the link counts as delivered.
 
 `DLNLink` has every `DeferredDeepLink` field plus `type` (`"deferred"` or `"direct"`) and a wider `source` (`"universalLink"` on iOS, `"appLink"` on Android, `"scheme"` for your URL scheme). A direct open has `confidenceScore: 100` and `matchQuality: "HIGH"`, and no server fields unless it was resolved. For a scheme URL such as `myapp://products/1?x=1`, `path` is `/products/1` (the host is part of the path, as in Expo Router) and `url` is the URL as received. A `#dln=…` fragment parameter is never part of `url` or `fullPath`.
 
-### `pendingLinks`, `pendingLink`, `releasePendingLink()`, `clearPendingLink()` (1.4.0, unreleased)
+### `pendingLinks`, `pendingLink`, `releasePendingLink()`, `clearPendingLink()` (1.4.0)
 
 `pendingLinks` is a read-only array of the links not delivered yet (held by `hold: true`, or waiting for a handler): the latest of each kind, the deferred link first. `pendingLink` is its first element, or `null`. `releasePendingLink()` delivers it to every handler and ends the hold, so later links go straight to the handlers; it returns `false` when there was nothing to deliver or no handler. `clearPendingLink()` drops it and keeps the hold on.
 
-### `resolveLink(url): Promise<DLNLink | null>` (1.4.0, unreleased)
+### `resolveLink(url): Promise<DLNLink | null>` (1.4.0)
 
 Looks a direct-open URL up on the server (`GET /api/v1/sdk/resolve`) and returns its `DLNLink` with `deeplinkId`, `targetUrl`, `campaignId` and `metadata` filled in. A 404, a timeout (`timeoutMs`) or an error returns the link unresolved; `null` means the URL is not a link on your domains or scheme. Never rejects.
 
-### `useDeepLink(options?): { link, pendingLink, pendingLinks, isLoading, release, clear }` (1.4.0, unreleased)
+### `useDeepLink(options?): { link, pendingLink, pendingLinks, isLoading, release, clear }` (1.4.0)
 
 A React hook (named export) over `onLink`. `link` is the latest `DLNLink` delivered to this hook; `pendingLinks` the links waiting while `hold` is true (deferred first) and `pendingLink` the first of them; `isLoading` is true while the first-launch check or the launch URL is being worked out. `release()` is `releasePendingLink()` (delivers and ends the hold until `hold` changes again) and `clear()` is `clearPendingLink()` (drops it, keeps holding, and sets `link` back to `null`). Options: those of `onLink`, plus `enabled` (default `true`). Change `hold` freely (`hold: !isSignedIn`): turning it off delivers what is pending.
 

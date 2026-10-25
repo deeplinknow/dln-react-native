@@ -13,7 +13,9 @@
  *
  * This example has no /products route, so mapLink sends every DeepLinkNow link to the home
  * screen with the link in ?dln=, and the screen shows it. In a real app, leave mapLink out
- * to route to the link's own path.
+ * to route to the link's own path. Links on the app's own scheme (dlnexample://...) aren't
+ * DeepLinkNow domain links: Expo Router routes them by their path itself, so here
+ * dlnexample://products/7 shows "Unmatched Route".
  */
 import { createRedirectSystemPath } from "@deeplinknow/react-native/expo-router";
 

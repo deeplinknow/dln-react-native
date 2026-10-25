@@ -15,6 +15,7 @@ import DeepLinkNow, {
   DLNError,
   getModuleType,
   type ParsedDeepLink,
+  useDeepLink,
   useDeferredDeepLink,
 } from "@deeplinknow/react-native";
 import { useLocalSearchParams } from "expo-router";
@@ -49,6 +50,9 @@ export default function HomeScreen() {
   // Shares the one check that +native-intent started. It also starts it where
   // +native-intent doesn't run (web), so it gets the same key and config.
   const late = useDeferredDeepLink({ apiKey: DLN_API_KEY, config: DLN_CONFIG });
+  // 1.4.0: one handler for every open. With Expo Router the router handles
+  // direct opens, so here it shows the deferred link (RN-38).
+  const every = useDeepLink({ apiKey: DLN_API_KEY, config: DLN_CONFIG });
   const initialized = DeepLinkNow.isInitialized();
   const initError =
     !(late.isLoading || initialized) && DeepLinkNow.lastError
@@ -128,6 +132,19 @@ export default function HomeScreen() {
             <Text style={styles.error}>Init failed: {initError}</Text>
           ) : (
             <Text>{initialized ? "Initialized" : "Initializing…"}</Text>
+          )}
+        </Section>
+
+        <Section title="4. onLink (1.4.0)">
+          {every.link ? (
+            <View>
+              <Row label="type" value={every.link.type} />
+              <Row label="source" value={every.link.source} />
+              <Row label="fullPath" value={every.link.fullPath} />
+              <Row label="url" value={every.link.url} />
+            </View>
+          ) : (
+            <Text>{every.isLoading ? "Waiting…" : "No link yet"}</Text>
           )}
         </Section>
 

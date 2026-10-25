@@ -620,7 +620,7 @@ packages:
       expo: '*'
       expo-modules-core: '*'
       react: '*'
-      react-native: '>=0.71.0'
+      react-native: '>=0.81.0'
     peerDependenciesMeta:
       '@expo/config-plugins':
         optional: true
