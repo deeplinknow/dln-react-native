@@ -2,9 +2,17 @@
 
 All notable changes to `@deeplinknow/react-native`. iOS, Android and React Native share one major.minor version (SDK-84).
 
+## 1.4.1 (2026-10-25)
+
+Fixes. Pins DeepLinkNow iOS `~> 1.4.1` and `com.deeplinknow:dln-android:1.4.1`, which carry their own fixes (SDK-84).
+
+- **A failed deferred check is tried again in the same launch** (SDK-24, RN-44). The check that `onLink`, `useDeepLink()` and `useDeferredDeepLink()` share ran once per JS process, so a failure (offline, or a hook that mounted before `initialize` was called) meant no deferred link until the next cold start. It now waits for an `initialize` that is in flight, and a failed check runs again on the next registration, after the next successful `initialize`, and when the app returns to the foreground. A check that found no link is not run again.
+- **`pendingLinks` lists held links only** (SDK-89, RN-39). It also listed links waiting for a first handler, unlike iOS and Android. Those links are still replayed to the first handler. `clearPendingLink()` drops only held links.
+- **Expo Go / JS fallback fingerprint** (RN-43). On Android it sent the API level (`"34"`) as `os_version`; it now sends the release (`"14"`), from `Platform.constants.Release` or a table of API levels, and an empty value when unknown. A missing language or time zone is sent empty instead of `"en-US"` / `"UTC"`, which matched every click with those values (FP-23).
+
 ## 1.4.0 (2026-10-25)
 
-Not released yet. Ships as 1.4.0 with iOS and Android 1.4.0 (SDK-84); the version is not bumped yet. The React Native changes below are JavaScript only.
+Published 2026-10-25 with iOS and Android 1.4.0 (SDK-84). The React Native changes below are JavaScript only.
 
 ### Features
 
@@ -13,7 +21,7 @@ Not released yet. Ships as 1.4.0 with iOS and Android 1.4.0 (SDK-84); the versio
 - **`useDeepLink(options?)`** returns `{ link, pendingLink, pendingLinks, isLoading, release, clear }` over `onLink`; `hold: !isSignedIn` delivers the pending link when the user signs in.
 - **Resolving direct opens** (SDK-90, RN-41): opt-in `resolve: true`, and `DeepLinkNow.resolveLink(url)`, call `GET /api/v1/sdk/resolve` to fill `deeplinkId`, `targetUrl`, `campaignId` and `metadata` (for links imported from Firebase Dynamic Links). Bounded by `timeoutMs`; a 404, a timeout or an error delivers the link unresolved.
 - **The `dln` fragment is stripped** (SDK-92, RN-42): `parseDeepLink`, `checkDeferredDeepLink` and `onLink` never include a `#dln=<click id>` fragment parameter in `url` or `fullPath`.
-- **Clipboard links are claimed on iOS** (SDK-93): this arrives with DeepLinkNow iOS SDK 1.4.0, which React Native 1.4.0 will pin. A pasteboard link carrying `#dln=<click id>` is claimed on the server first, so a stale or already-claimed link is skipped instead of delivered as an exact match. No React Native code change.
+- **Clipboard links are claimed on iOS** (SDK-93): this arrives with DeepLinkNow iOS SDK 1.4.0, which React Native 1.4.0 pins. A pasteboard link carrying `#dln=<click id>` is claimed on the server first, so a stale or already-claimed link is skipped instead of delivered as an exact match. No React Native code change.
 
 - **Hold the deferred link until sign-in** (RN-33 to RN-35). `useDeferredDeepLink({ hold: !isSignedIn, onLink })` keeps a found link in memory while `hold` is true (`link` is `null`, the new `heldLink` has it) and calls `onLink(link)` exactly once when `hold` turns false. The link is marked handled before `onLink` runs, so re-renders, other `onLink` callbacks and the Expo Router helper never open it twice. `clear()` drops a held link. `hold` applies to the hook call that passes it. If `onLink` throws, the SDK logs a `console.warn` (the link stays handled).
 - **`routeDeferredLink: false`** for `createRedirectSystemPath` / `redirectSystemPathWithDeferredLink`: the helper starts the deferred check at launch but doesn't wait for it or route to it, and leaves the link to the hook. A deferred link that `mapLink` maps to `null` also stays available to the hook (documented and tested).

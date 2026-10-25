@@ -420,9 +420,11 @@ describe("SDK-86 / SDK-91: one deferred check, shared", () => {
     });
     mod.useDeferredDeepLink({ apiKey: KEY, hold: true });
     await tick();
-    expect(sdk.pendingLink).toMatchObject({ type: "deferred" });
+    expect(mod.useDeferredDeepLink({ hold: true }).heldLink).toMatchObject({
+      path: "/products/123",
+    });
     mod.useDeferredDeepLink({ hold: true }).clear();
-    expect(sdk.pendingLink).toBeNull();
+    expect(mod.useDeferredDeepLink({ hold: true }).heldLink).toBeNull();
     const handler = jest.fn();
     sdk.onLink(handler);
     await tick();
@@ -445,7 +447,9 @@ describe("SDK-86: replay to a late handler", () => {
     const session = require("../link-session");
     session.startDeferredCheck(sdk, { apiKey: KEY });
     await tick();
-    expect(sdk.pendingLink).toMatchObject({ type: "deferred" });
+    // SDK-89: waiting for a first handler is not held, so it isn't listed.
+    expect(sdk.pendingLinks).toEqual([]);
+    expect(sdk.pendingLink).toBeNull();
     const first = jest.fn();
     sdk.onLink(first);
     expect(first).not.toHaveBeenCalled(); // never before onLink returns
@@ -832,5 +836,146 @@ describe("RN-30 / SDK-88: the Expo Router helper and onLink together", () => {
     sdk.onLink(handler);
     await tick();
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe("SDK-24: a failed deferred check runs again in this launch", () => {
+  beforeEach(() => {
+    silenceConsole();
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("SDK-24 / RN-44: onLink registered before initialize gets the link once initialize succeeds", async () => {
+    const { sdk, native } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    const handler = jest.fn();
+    sdk.onLink(handler); // no apiKey, no initialize yet: the check fails (notInitialized)
+    await tick();
+    expect(handler).not.toHaveBeenCalled();
+    expect(sdk.lastError?.code).toBe("notInitialized");
+    await sdk.initialize(KEY);
+    await tick();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][0]).toMatchObject({ type: "deferred" });
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(1);
+    expect(sdk.lastError).toBeNull();
+  });
+
+  it("SDK-24 / RN-44: an initialize started elsewhere is waited for, not failed", async () => {
+    const { sdk, native } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    const handler = jest.fn();
+    const init = sdk.initialize(KEY);
+    sdk.onLink(handler);
+    await init;
+    await tick();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(1);
+  });
+
+  it("SDK-24 / RN-44: an offline check runs again on the next registration", async () => {
+    let calls = 0;
+    const { sdk, native } = load({
+      native: {
+        checkDeferredDeepLink: () => {
+          calls += 1;
+          return calls === 1
+            ? Promise.reject(
+                Object.assign(new Error("offline"), { code: "network" })
+              )
+            : Promise.resolve(deferredLink());
+        },
+      },
+    });
+    const first = jest.fn();
+    sdk.onLink(first, { apiKey: KEY });
+    await tick();
+    expect(first).not.toHaveBeenCalled();
+    expect(sdk.lastError?.code).toBe("network");
+    const second = jest.fn();
+    sdk.onLink(second);
+    await tick();
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(2);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it("SDK-24 / RN-44: an offline check runs again when the app comes to the foreground", async () => {
+    let calls = 0;
+    const { sdk, native, appState } = load({
+      native: {
+        checkDeferredDeepLink: () => {
+          calls += 1;
+          return calls === 1
+            ? Promise.reject(
+                Object.assign(new Error("offline"), { code: "network" })
+              )
+            : Promise.resolve(deferredLink());
+        },
+      },
+    });
+    const handler = jest.fn();
+    sdk.onLink(handler, { apiKey: KEY });
+    await tick();
+    appState.emit("background");
+    await tick();
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(1);
+    appState.emit("active");
+    await tick();
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenCalledTimes(1);
+    // Done: later foregrounds and registrations don't run it again.
+    appState.emit("active");
+    sdk.onLink(jest.fn());
+    await tick();
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(2);
+  });
+
+  it("SDK-23 / RN-44: a check that found no link is not run again", async () => {
+    const { sdk, native, appState } = load();
+    sdk.onLink(jest.fn(), { apiKey: KEY });
+    await tick();
+    appState.emit("active");
+    await sdk.initialize(KEY, { enableLogs: false });
+    sdk.onLink(jest.fn());
+    await tick();
+    expect(native.checkDeferredDeepLink).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SDK-89: pendingLinks lists held links only", () => {
+  beforeEach(() => {
+    silenceConsole();
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("SDK-89 / RN-39: a link waiting for a first handler is not held; clearPendingLink keeps it for the handler", async () => {
+    const { sdk } = load({
+      native: { checkDeferredDeepLink: async () => deferredLink() },
+    });
+    const session = require("../link-session");
+    session.startDeferredCheck(sdk, { apiKey: KEY });
+    await tick();
+    expect(sdk.pendingLinks).toEqual([]);
+    sdk.clearPendingLink();
+    const holding = jest.fn();
+    const unsubscribe = sdk.onLink(holding, { hold: true });
+    await tick();
+    expect(sdk.pendingLinks.map((l: { type: string }) => l.type)).toEqual([
+      "deferred",
+    ]);
+    unsubscribe();
+    expect(sdk.pendingLinks).toEqual([]);
+    const handler = jest.fn();
+    sdk.onLink(handler);
+    await tick();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(holding).not.toHaveBeenCalled();
   });
 });

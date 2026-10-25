@@ -409,6 +409,59 @@ describe("checkDeferredDeepLink (JS fallback: fingerprint step only)", () => {
     expect(JSON.stringify(body)).not.toContain("ip_address");
   });
 
+  it("RN-43 / SDK-22: the JS fallback sends the Android release, not the API level", async () => {
+    const { sdk, fetchMock } = await setup({ body: MATCH_BODY }, "android");
+    await sdk.checkDeferredDeepLink();
+    const call = fetchMock.mock.calls.find((c) =>
+      String(c[0]).endsWith("/match")
+    )!;
+    const fp = JSON.parse((call[1] as any).body).fingerprint;
+    expect(fp.os_version).toBe("14"); // API 34
+    expect(fp.user_agent).toContain("Android 14;");
+  });
+
+  it("RN-43: Platform.constants.Release wins; an unknown API level sends an empty version", async () => {
+    mockFetch({ init: { body: INIT_BODY }, match: { body: MATCH_BODY } });
+    const withRelease = loadSdk({
+      flavor: "none",
+      os: "android",
+      platformConstants: { Release: "15" },
+    });
+    await withRelease.sdk.initialize(KEY, { retryAttempts: 0 });
+    await withRelease.sdk.checkDeferredDeepLink();
+    const body = (c: unknown[]) => JSON.parse((c[1] as any).body).fingerprint;
+    const matchCalls = () =>
+      ((global as any).fetch as jest.Mock).mock.calls.filter((c) =>
+        String(c[0]).endsWith("/match")
+      );
+    expect(body(matchCalls()[0]).os_version).toBe("15");
+
+    mockFetch({ init: { body: INIT_BODY }, match: { body: MATCH_BODY } });
+    const unknown = loadSdk({ flavor: "none", os: "android" });
+    jest.requireMock("react-native").Platform.Version = 99;
+    await unknown.sdk.initialize(KEY, { retryAttempts: 0 });
+    await unknown.sdk.checkDeferredDeepLink();
+    expect(body(matchCalls()[0]).os_version).toBe("");
+  });
+
+  it("RN-43 / FP-23: a missing language or timezone is sent empty, never en-US or UTC", async () => {
+    const spy = jest.spyOn(Intl, "DateTimeFormat").mockImplementation(
+      () =>
+        ({
+          resolvedOptions: () => ({}),
+        }) as unknown as Intl.DateTimeFormat
+    );
+    const { sdk, fetchMock } = await setup({ body: MATCH_BODY }, "ios");
+    await sdk.checkDeferredDeepLink();
+    spy.mockRestore();
+    const call = fetchMock.mock.calls.find((c) =>
+      String(c[0]).endsWith("/match")
+    )!;
+    const fp = JSON.parse((call[1] as any).body).fingerprint;
+    expect(fp.language).toBe("");
+    expect(fp.timezone).toBe("");
+  });
+
   it("SDK-22: fingerprint values are web-comparable (hyphenated language, IANA timezone, logical points)", async () => {
     const { sdk, fetchMock } = await setup({ body: MATCH_BODY }, "ios");
     await sdk.checkDeferredDeepLink();

@@ -44,7 +44,7 @@ npm install @deeplinknow/react-native
 cd ios && pod install
 ```
 
-If `pod install` (or `npx expo prebuild`) says no spec satisfies `DeepLinkNow (~> 1.4.0)`, your local CocoaPods spec cache is older than the release. Run `cd ios && pod install --repo-update` once.
+If `pod install` (or `npx expo prebuild`) says no spec satisfies `DeepLinkNow (~> 1.4.1)`, your local CocoaPods spec cache is older than the release. Run `cd ios && pod install --repo-update` once.
 
 Autolinking picks the right native module (TurboModule on the new architecture, bridge module on the old one). Add the link domains by hand:
 
@@ -296,7 +296,7 @@ The one call. It runs the platform chain and stops at the first step that finds 
 | iOS | Pasteboard: the landing page copied the link before sending the user to the App Store (exact) | Fingerprint match (best effort) |
 | Android | Play Install Referrer (exact) | Fingerprint match (best effort) |
 
-On iOS, from DeepLinkNow iOS SDK 1.4.0 (which React Native 1.4.0 will pin), a pasteboard link that carries the click's id (`#dln=<id>`, added by the link page) is claimed on the server before it is returned: a stale or already-claimed link is skipped and the chain moves on to fingerprinting. The fragment is never part of the returned link.
+On iOS, from DeepLinkNow iOS SDK 1.4.0 (which React Native pins from 1.4.0), a pasteboard link that carries the click's id (`#dln=<id>`, added by the link page) is claimed on the server before it is returned: a stale or already-claimed link is skipped and the chain moves on to fingerprinting. The fragment is never part of the returned link.
 
 It does the work once per install. After a definitive answer (a link, or nothing found), later calls resolve `null` without touching the network, clipboard or referrer, unless you pass `force: true`. Errors (offline, 5xx, not initialized, …) also resolve `null`, never reject, and do not mark the check as done, so the next call tries again. The error is in `DeepLinkNow.lastError`.
 
@@ -403,13 +403,13 @@ useEffect(() => {
 
 ### `onLink(handler, options?): () => void` (1.4.0)
 
-Registers `handler(link: DLNLink)` for every link, deferred or direct (see [One handler for every open](#one-handler-for-every-open-140)), and returns a function that unregisters it. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, `hold` (default `false`), `resolve` (default `false`), `schemes` (your custom URL schemes; default: the Expo config's `scheme`; system schemes such as `mailto` never count). The deferred check and the `Linking` listener start once per app process, with the options of the first registration. A handler that throws is logged with `console.warn`; the link counts as delivered.
+Registers `handler(link: DLNLink)` for every link, deferred or direct (see [One handler for every open](#one-handler-for-every-open-140)), and returns a function that unregisters it. Options: `apiKey` and `config` (initialize first when the SDK isn't initialized), `minConfidence`, `useClipboard`, `hold` (default `false`), `resolve` (default `false`), `schemes` (your custom URL schemes; default: the Expo config's `scheme`; system schemes such as `mailto` never count). The deferred check and the `Linking` listener start once per app process, with the options of the first registration. If the check fails (offline, or it ran before `initialize`), it runs again on the next registration, after the next successful `initialize`, or when the app comes back to the foreground (1.4.1). A handler that throws is logged with `console.warn`; the link counts as delivered.
 
 `DLNLink` has every `DeferredDeepLink` field plus `type` (`"deferred"` or `"direct"`) and a wider `source` (`"universalLink"` on iOS, `"appLink"` on Android, `"scheme"` for your URL scheme). A direct open has `confidenceScore: 100` and `matchQuality: "HIGH"`, and no server fields unless it was resolved. For a scheme URL such as `myapp://products/1?x=1`, `path` is `/products/1` (the host is part of the path, as in Expo Router) and `url` is the URL as received. A `#dln=…` fragment parameter is never part of `url` or `fullPath`.
 
 ### `pendingLinks`, `pendingLink`, `releasePendingLink()`, `clearPendingLink()` (1.4.0)
 
-`pendingLinks` is a read-only array of the links not delivered yet (held by `hold: true`, or waiting for a handler): the latest of each kind, the deferred link first. `pendingLink` is its first element, or `null`. `releasePendingLink()` delivers it to every handler and ends the hold, so later links go straight to the handlers; it returns `false` when there was nothing to deliver or no handler. `clearPendingLink()` drops it and keeps the hold on.
+`pendingLinks` is a read-only array of the links held by `hold: true`: the latest of each kind, the deferred link first. `pendingLink` is its first element, or `null`. A link that arrives before any handler is registered isn't listed (from 1.4.1, the same as iOS and Android); the first handler gets it. `releasePendingLink()` delivers the held links to every handler and ends the hold, so later links go straight to the handlers; it returns `false` when there was nothing to deliver or no handler. `clearPendingLink()` drops them and keeps the hold on.
 
 ### `resolveLink(url): Promise<DLNLink | null>` (1.4.0)
 

@@ -12,7 +12,7 @@
  * No React and no Expo Router imports: the SDK instance is passed in, so this module has no
  * import cycle with `index.ts` and works in any runtime.
  */
-import { Linking, Platform } from "react-native";
+import { AppState, Linking, Platform } from "react-native";
 
 import { parseSchemeLink, stripDlnFragment } from "./deeplink";
 import type { DeepLinkNowConfig } from "./index";
@@ -35,6 +35,11 @@ export interface DeferredSessionSdk {
     config?: DeepLinkNowConfig
   ) => Promise<DLNAppInfo | null>;
   isInitialized: () => boolean;
+  /**
+   * True when the last `checkDeferredDeepLink` failed (offline, not initialized, …) rather
+   * than finding no link. A failed check is tried again (SDK-24). Absent: never retried.
+   */
+  lastDeferredCheckFailed?: () => boolean;
   parseDeepLink: (url: string) => ParsedDeepLink | null;
   /** SDK-90. Used for direct opens when `resolve: true`. */
   resolveLink?: (url: string) => Promise<DLNLink | null>;
@@ -105,8 +110,9 @@ export interface LinkSessionState {
   /** The first of `pendingLinks`, or null. */
   pendingLink: DLNLink | null;
   /**
-   * Links not delivered yet, held (SDK-89) or waiting for a handler (SDK-86): the latest of
-   * each kind, deferred first. A new array only when it changes.
+   * The links held by `hold` (SDK-89): the latest of each kind, deferred first. Links waiting
+   * for a first handler aren't listed; they are replayed to it (SDK-86). A new array only
+   * when it changes.
    */
   pendingLinks: readonly DLNLink[];
 }
@@ -142,6 +148,14 @@ let seq = 0;
 let deferredStatus: DeferredSessionStatus = "idle";
 let deferredEntry: Entry | null = null;
 let running: Promise<DeferredDeepLink | null> | null = null;
+/** SDK-24: the last check failed, so the next trigger runs it again. */
+let deferredFailed = false;
+/** The SDK and options of the last check, for a retry that no registration triggers. */
+let lastCheck: {
+  options: DeferredSessionOptions;
+  sdk: DeferredSessionSdk;
+} | null = null;
+let foregroundRetry = false;
 /** Undelivered links, oldest kind first: at most one deferred and the latest direct one. */
 let queue: Entry[] = [];
 const subscribers = new Set<Subscriber>();
@@ -178,8 +192,10 @@ function changed() {
   ) {
     deferredState = { status: deferredStatus, link, handled };
   }
-  // The queue is kept deferred first (enqueue), so pendingLinks is too.
-  const queued = queue.map((entry) => entry.link);
+  // The queue is kept deferred first (enqueue), so pendingLinks is too. It lists held links
+  // only: every registered handler holds (SDK-89). With no handler the queue waits for one.
+  const holding = subscribers.size > 0 && [...subscribers].every((s) => s.hold);
+  const queued = holding ? queue.map((entry) => entry.link) : [];
   const pendingLinks = samePending(linkState.pendingLinks, queued)
     ? linkState.pendingLinks
     : Object.freeze(queued);
@@ -320,15 +336,19 @@ export function releasePendingLink(): boolean {
     subscriber.hold = false;
   }
   if (queue.length === 0 || subscribers.size === 0) {
+    changed();
     return false;
   }
   deliver(queue.slice(), [...subscribers]);
   return true;
 }
 
-/** Drops the pending link(s): they are never delivered in this process. The hold stays on. */
+/**
+ * Drops the held link(s): they are never delivered in this process. The hold stays on.
+ * Links waiting for a first handler aren't held, so they stay (SDK-89).
+ */
 export function clearPendingLink(): void {
-  if (queue.length === 0) {
+  if (linkState.pendingLinks.length === 0) {
     return;
   }
   for (const entry of queue.slice()) {
@@ -374,16 +394,20 @@ function toDeferredLink(link: DeferredDeepLink): DLNLink {
 
 /**
  * Starts the deferred deep link check once per JS process and returns its promise; later
- * calls get the same promise (or its settled result). Never rejects: a failure resolves
- * null and the error is in `DeepLinkNow.lastError` (SDK-85).
+ * calls get the same promise (or its settled result). A check that failed (offline, not
+ * initialized yet, …) runs again on the next call, the next successful `initialize` or the
+ * next time the app comes to the foreground (SDK-24). Never rejects: a failure resolves null
+ * and the error is in `DeepLinkNow.lastError` (SDK-85).
  */
 export function startDeferredCheck(
   sdk: DeferredSessionSdk,
   options: DeferredSessionOptions
 ): Promise<DeferredDeepLink | null> {
-  if (running) {
+  if (running && !deferredFailed) {
     return running;
   }
+  deferredFailed = false;
+  lastCheck = { sdk, options };
   deferredStatus = "pending";
   changed();
   const checkOptions: DeferredDeepLinkOptions = {};
@@ -395,12 +419,20 @@ export function startDeferredCheck(
   }
   running = (async () => {
     let link: DeferredDeepLink | null = null;
+    let failed = false;
     try {
       await ensureSdkInitialized(sdk, options);
+      // An initialize the app started elsewhere: wait for it rather than fail (SDK-24).
+      await sdk.waitForInitialization?.();
       link = (await sdk.checkDeferredDeepLink(checkOptions)) ?? null;
+      failed = !link && sdk.lastDeferredCheckFailed?.() === true;
     } catch {
       // checkDeferredDeepLink never rejects; this guards a custom or mocked SDK.
       link = null;
+    }
+    if (failed) {
+      deferredFailed = true;
+      retryOnForeground();
     }
     if (link) {
       seq += 1;
@@ -421,15 +453,55 @@ export function startDeferredCheck(
 }
 
 /**
+ * SDK-24: runs a failed deferred check again (after a successful `initialize`, or when the
+ * app comes back to the foreground). Does nothing when the last check succeeded or is
+ * running.
+ */
+export function retryDeferredCheck(): void {
+  if (!(deferredFailed && lastCheck)) {
+    return;
+  }
+  startDeferredCheck(lastCheck.sdk, lastCheck.options).catch(() => null);
+}
+
+interface AppStateLike {
+  addEventListener?: (
+    type: "change",
+    handler: (state: string) => void
+  ) => unknown;
+}
+
+/** Listens for the app coming to the foreground, once per process, to retry a failed check. */
+function retryOnForeground() {
+  if (foregroundRetry) {
+    return;
+  }
+  foregroundRetry = true;
+  try {
+    (AppState as AppStateLike | undefined)?.addEventListener?.(
+      "change",
+      (state) => {
+        if (state === "active") {
+          retryDeferredCheck();
+        }
+      }
+    );
+  } catch {
+    // No AppState in this runtime: the next registration or initialize retries.
+  }
+}
+
+/**
  * Records that this process will not run the deferred check (the app was opened by a link,
  * which wins over a deferred match in the Expo Router helper), so a later hook doesn't start
  * one.
  */
 export function skipDeferredCheck(): void {
-  if (running) {
+  if (running && !deferredFailed) {
     return;
   }
   running = Promise.resolve(null);
+  deferredFailed = false;
   deferredStatus = "done";
   changed();
 }
@@ -693,6 +765,7 @@ export function subscribeLinks(
 ): LinkSubscription {
   const subscriber: Subscriber = { handler, hold: options.hold === true };
   subscribers.add(subscriber);
+  changed();
   addAppSchemes(options.schemes);
   startDeferredCheck(sdk, options).catch(() => null);
   startDirectOpens(sdk, options);
@@ -703,12 +776,14 @@ export function subscribeLinks(
         return;
       }
       subscriber.hold = hold;
+      changed();
       if (!hold) {
         dispatchSoon();
       }
     },
     unsubscribe() {
       subscribers.delete(subscriber);
+      changed();
     },
   };
 }

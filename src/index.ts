@@ -20,6 +20,7 @@ import {
   getPendingLinks,
   type OnLinkOptions,
   releasePendingLink,
+  retryDeferredCheck,
   subscribeLinks,
 } from "./link-session";
 import type {
@@ -221,6 +222,44 @@ function maskKey(key: string): string {
 /** The everyday entry points whose failures are recorded in `lastError` (SDK-85). */
 type FailureKind = "initialize" | "checkDeferredDeepLink" | "findDeferredUser";
 
+/** Android release for each API level the SDK supports (minSdk 24). */
+const ANDROID_RELEASES: Record<number, string> = {
+  24: "7.0",
+  25: "7.1",
+  26: "8.0",
+  27: "8.1",
+  28: "9",
+  29: "10",
+  30: "11",
+  31: "12",
+  32: "12",
+  33: "13",
+  34: "14",
+  35: "15",
+  36: "16",
+};
+
+/**
+ * The Android release ("14"), from `Platform.constants.Release`, else the API level table.
+ * Empty when unknown: an API level is never sent as a version.
+ */
+function androidRelease(platform: {
+  constants?: unknown;
+  Version?: unknown;
+}): string {
+  try {
+    const release = (platform.constants as { Release?: unknown } | undefined)
+      ?.Release;
+    if (typeof release === "string" && release.trim()) {
+      return release.trim();
+    }
+  } catch {
+    // fall back to the table
+  }
+  const level = Number(platform.Version);
+  return ANDROID_RELEASES[level] ?? "";
+}
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
@@ -244,6 +283,8 @@ class DeepLinkNow {
   private fallbackInFlight: Promise<DeferredDeepLink | null> | null = null;
   /** The running non-`force` `checkDeferredDeepLink`, shared by concurrent calls (SDK-91). */
   private deferredInFlight: Promise<DeferredDeepLink | null> | null = null;
+  /** Whether the last `checkDeferredDeepLink` failed (SDK-24), for the link session's retry. */
+  private deferredCheckFailed = false;
   private degradedWarned = false;
   private readonly installTime: string = new Date().toISOString();
 
@@ -389,6 +430,8 @@ class DeepLinkNow {
       (info) => {
         if (this.initPromise === p) {
           this.recordSuccess("initialize");
+          // SDK-24: a deferred check that failed (e.g. it ran before initialize) runs again.
+          retryDeferredCheck();
         }
         return info;
       },
@@ -566,11 +609,21 @@ class DeepLinkNow {
   ): Promise<DeferredDeepLink | null> {
     try {
       const link = await this.runCheckDeferredDeepLink(options);
+      this.deferredCheckFailed = false;
       this.recordSuccess("checkDeferredDeepLink");
       return link;
     } catch (e) {
+      this.deferredCheckFailed = true;
       return this.recordFailure("checkDeferredDeepLink", e);
     }
+  }
+
+  /**
+   * @internal Whether the last `checkDeferredDeepLink` failed rather than finding no link.
+   * The link session retries a failed check (SDK-24).
+   */
+  lastDeferredCheckFailed(): boolean {
+    return this.deferredCheckFailed;
   }
 
   private async runCheckDeferredDeepLink(
@@ -860,7 +913,9 @@ class DeepLinkNow {
    * `releasePendingLink()`, SDK-89), `resolve` (look direct opens up on the server, SDK-90),
    * `schemes` (your custom URL schemes; default: the Expo config's `scheme`, SDK-87).
    * The check and the `Linking` listener start once per process, with the options of the
-   * first registration.
+   * first registration. A check that failed (offline, or before `initialize`) runs again on
+   * the next registration, the next successful `initialize` or the next return to the
+   * foreground (SDK-24).
    */
   onLink(
     handler: (link: DLNLink) => void,
@@ -876,16 +931,17 @@ class DeepLinkNow {
   }
 
   /**
-   * The first link not delivered yet (SDK-89): held by `hold: true`, or waiting for a
-   * handler. The first of `pendingLinks` (deferred first); null when there is none.
+   * The first link held by `hold: true` (SDK-89): the first of `pendingLinks` (deferred
+   * first); null when nothing is held.
    */
   get pendingLink(): DLNLink | null {
     return getPendingLink();
   }
 
   /**
-   * Every link not delivered yet (SDK-89): the latest of each kind, one deferred and one
-   * direct, deferred first. Read-only; empty when there is none.
+   * Every link held by `hold: true` (SDK-89): the latest of each kind, one deferred and one
+   * direct, deferred first. Read-only; empty when nothing is held. A link that arrived before
+   * any handler isn't held: the first handler gets it.
    */
   get pendingLinks(): readonly DLNLink[] {
     return getPendingLinks();
@@ -1163,17 +1219,24 @@ class DeepLinkNow {
   private getFingerprint(): Fingerprint {
     const os = Platform.OS === "ios" ? "ios" : "android";
 
-    let osVersion = String(Platform.Version);
+    let osVersion = "";
     if (os === "ios") {
+      osVersion = String(Platform.Version);
       try {
         osVersion = nativeModules?.PlatformConstants?.osVersion || osVersion;
       } catch {
         // keep major version
       }
+    } else {
+      // Platform.Version is the API level (34) on Android; the server compares the release
+      // ("14") that the link page reads from the browser.
+      osVersion = androidRelease(Platform);
     }
 
-    let language = "en-US";
-    let timezone = "UTC";
+    // A value the device doesn't give stays empty (missing to the scorer, MATCH-29), never a
+    // default that would match every "en-US" or "UTC" click (FP-23).
+    let language = "";
+    let timezone = "";
     try {
       const resolved = Intl.DateTimeFormat().resolvedOptions();
       if (resolved.locale) {
@@ -1183,7 +1246,7 @@ class DeepLinkNow {
         timezone = resolved.timeZone;
       }
     } catch {
-      // defaults
+      // missing
     }
 
     let screenWidth: number | undefined;

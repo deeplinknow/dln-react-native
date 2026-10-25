@@ -16,6 +16,26 @@ export interface LoadOptions {
   initialUrl?: string | null | Promise<string | null>;
   native?: Record<string, any>;
   os?: "ios" | "android";
+  /** `Platform.constants` (Android: `{ Release: "14" }`); undefined = none. */
+  platformConstants?: Record<string, unknown>;
+}
+
+/** A fake `AppState`: `emit(state)` fires a `change` event like the OS does. */
+export function createAppStateMock() {
+  const handlers = new Set<(state: string) => void>();
+  return {
+    addEventListener: jest.fn(
+      (_type: string, handler: (state: string) => void) => {
+        handlers.add(handler);
+        return { remove: () => handlers.delete(handler) };
+      }
+    ),
+    emit(state: string) {
+      for (const handler of handlers) {
+        handler(state);
+      }
+    },
+  };
 }
 
 /** A fake `Linking`: `emit(url)` fires a `url` event like the OS does. */
@@ -246,6 +266,7 @@ export function loadSdk(opts: LoadOptions = {}) {
   const os = opts.os ?? "ios";
   const native = flavor === "none" ? null : createNativeMock(opts.native);
   const linking = createLinkingMock(opts.initialUrl ?? null);
+  const appState = createAppStateMock();
 
   jest.resetModules();
 
@@ -274,6 +295,7 @@ export function loadSdk(opts: LoadOptions = {}) {
     Platform: {
       OS: os,
       Version: os === "ios" ? "17.4" : 34,
+      constants: opts.platformConstants,
       select: (o: Record<string, any>) => (os in o ? o[os] : o.default),
     },
     NativeModules: {
@@ -295,6 +317,7 @@ export function loadSdk(opts: LoadOptions = {}) {
       get: () => ({ width: 393, height: 852, scale: 3 }),
     },
     Linking: linking,
+    AppState: appState,
   }));
 
   (global as any).__turboModuleProxy =
@@ -306,6 +329,7 @@ export function loadSdk(opts: LoadOptions = {}) {
     mod,
     native: native as Record<string, jest.Mock>,
     linking,
+    appState,
   };
 }
 
