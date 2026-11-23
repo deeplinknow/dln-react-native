@@ -2,6 +2,13 @@
 
 All notable changes to `@deeplinknow/react-native`. iOS, Android and React Native share one major.minor version (SDK-84).
 
+## 1.4.2 (unreleased)
+
+Pins DeepLinkNow iOS `~> 1.4.2` and `com.deeplinknow:dln-android:1.4.2` (SDK-84, RN-05). No JavaScript changes.
+
+- **App Review Guideline 2.5.2.** iOS 1.4.2 removes the `itms-services` string from the binary; App Review rejected an app for it (IOS-42). Updating this package makes `pod install` take iOS 1.4.2.
+- The native match request sends only what scoring uses: no `advertising_id` key, no device hash, no CPU core count (SDK-21, SDK-60). Match scores don't change.
+
 ## 1.4.1 (2026-10-25)
 
 Fixes. Pins DeepLinkNow iOS `~> 1.4.1` and `com.deeplinknow:dln-android:1.4.1`, which carry their own fixes (SDK-84).
