@@ -2,7 +2,7 @@
 
 All notable changes to `@deeplinknow/react-native`. iOS, Android and React Native share one major.minor version (SDK-84).
 
-## 1.4.2 (unreleased)
+## 1.4.2 (2026-11-24)
 
 Pins DeepLinkNow iOS `~> 1.4.2` and `com.deeplinknow:dln-android:1.4.2` (SDK-84, RN-05). No JavaScript changes.
 
